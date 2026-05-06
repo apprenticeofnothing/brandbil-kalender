@@ -5,8 +5,10 @@
 
 // May 2026 is fully inside CEST (DST) in Europe/Copenhagen, so 22:00 CEST = 20:00 UTC.
 // Hard-coding UTC instants keeps this independent of the device's clock zone.
+const FIRST_DAY = 5;
+const LAST_DAY = 24;
 const TRIGGERS = [];
-for (let day = 6; day <= 24; day++) {
+for (let day = FIRST_DAY; day <= LAST_DAY; day++) {
   TRIGGERS.push(Date.UTC(2026, 4, day, 20, 0, 0)); // month 4 = May
 }
 
@@ -44,7 +46,7 @@ function buildList() {
   const list = document.getElementById("dayList");
   list.innerHTML = "";
   for (let i = 0; i < TRIGGERS.length; i++) {
-    const day = 6 + i;
+    const day = FIRST_DAY + i;
     const li = document.createElement("li");
     li.className = "day";
     li.dataset.index = String(i);
