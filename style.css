@@ -74,14 +74,47 @@ main {
   text-transform: uppercase;
 }
 
+.hero-circle {
+  position: relative;
+  width: clamp(200px, 58vw, 280px);
+  aspect-ratio: 1;
+  margin: 18px auto 14px;
+  border-radius: 50%;
+  border: 3px solid var(--accent);
+  overflow: hidden;
+  isolation: isolate;
+  box-shadow: 0 8px 30px rgba(200, 16, 46, 0.20), 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.hero-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 28%; /* keep faces visible, not the turntable */
+  z-index: 1;
+}
+
 .big-number {
-  font-weight: 800;
-  font-size: clamp(72px, 22vw, 120px);
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 2;
+  font-weight: 900;
+  font-size: clamp(140px, 44vw, 220px);
   line-height: 1;
-  margin: 14px 0 6px;
-  color: var(--accent);
-  letter-spacing: -0.04em;
+  letter-spacing: -0.05em;
   font-variant-numeric: tabular-nums;
+  /* Hollow / outlined: transparent fill so the photo shows through, white stroke for contrast */
+  color: transparent;
+  -webkit-text-stroke: 3px #ffffff;
+  text-stroke: 3px #ffffff;
+  /* Soft drop-shadow so the outline reads against any photo region */
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
+  pointer-events: none;
+  user-select: none;
 }
 
 .big-label {
@@ -96,8 +129,14 @@ main {
   transform: translateY(2px);
 }
 
+/* Reunion-day mode: the number is replaced with a 🚒 emoji, so disable the
+   outline (otherwise the emoji would be hollowed out too). */
 .hero.reunion .big-number {
-  font-size: clamp(56px, 12vw, 80px);
+  color: initial;
+  -webkit-text-stroke: 0;
+  text-stroke: 0;
+  font-size: clamp(110px, 34vw, 170px);
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.35));
 }
 
 /* ── Day list ─────────────────────────────────────────────────────────── */

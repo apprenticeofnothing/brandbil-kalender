@@ -1,4 +1,4 @@
-// Brandbil Count Down Kalender
+// Brandbil Countdown Kalender
 // 19-day countdown from 6 May → 24 May 2026.
 // A day "checks off" once Copenhagen local time passes 22:00 on that day.
 // Both phones agree because every check is computed deterministically from Date.now().

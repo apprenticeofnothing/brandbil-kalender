@@ -1,4 +1,4 @@
-# Brandbil Count Down Kalender
+# Brandbil Countdown Kalender
 
 A 19-day countdown calendar from **6 May → 24 May 2026**. Each day automatically gets a 🚒 stamp once Copenhagen local time passes 22:00.
 
