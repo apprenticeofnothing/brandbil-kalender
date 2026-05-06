@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="da">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Brandbil Count Down Kalender</title>
+
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Brandbil">
+  <meta name="theme-color" content="#c8102e" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1a0608" media="(prefers-color-scheme: dark)">
+
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+  <link rel="manifest" href="manifest.webmanifest">
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <div class="title">Brandbil Count Down Kalender</div>
+      <div class="big-number" id="bigNumber">–</div>
+      <div class="big-label" id="bigLabel">indlæser…</div>
+    </header>
+
+    <ol class="day-list" id="dayList" aria-label="Dage"></ol>
+
+    <footer class="foot">
+      <span id="footNote">6.&nbsp;maj – 24.&nbsp;maj 2026 · 🚒 hver aften kl.&nbsp;22:00</span>
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
