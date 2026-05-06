@@ -94,7 +94,18 @@ main {
   object-fit: cover;
   object-position: center 28%; /* keep faces visible, not the turntable */
   z-index: 1;
+  transition: opacity 1.0s ease-in-out;
 }
+
+/* Two stacked photos: intro photo shown during stages A/B, calendar photo
+   shown in steady state (stage C). They cross-fade when Stage C kicks in. */
+.hero-photo-intro    { opacity: 0; }
+.hero-photo-calendar { opacity: 1; }
+
+body.intro-stage-a .hero-photo-intro,
+body.intro-stage-b .hero-photo-intro    { opacity: 1; }
+body.intro-stage-a .hero-photo-calendar,
+body.intro-stage-b .hero-photo-calendar { opacity: 0; }
 
 .big-number {
   position: absolute;
