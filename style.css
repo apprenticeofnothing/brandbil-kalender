@@ -162,16 +162,20 @@ body.intro-stage-b .hero-photo-calendar { opacity: 0; }
 
 .big-label {
   font-weight: 600;
-  font-size: 20px;
+  font-size: clamp(17px, 4.8vw, 20px);
   color: var(--fg);
 }
 
 .big-label .truck {
   display: inline-block;
-  margin-left: 4px;
+  margin: 0 4px;
   transform: translateY(2px);
   animation: truckDrive 0.65s cubic-bezier(0.5, 0, 0.5, 1) infinite;
   transform-origin: center bottom;
+}
+
+.big-label .truck.mirror {
+  animation-name: truckDriveMirror;
 }
 
 @keyframes truckDrive {
@@ -182,12 +186,175 @@ body.intro-stage-b .hero-photo-calendar { opacity: 0; }
   100% { transform: translate(0px, 2px) rotate(-2deg); }
 }
 
+@keyframes truckDriveMirror {
+  0%   { transform: translate(0px, 2px) rotate(-2deg) scaleX(-1); }
+  25%  { transform: translate(1px, 0px) rotate(0.5deg) scaleX(-1); }
+  50%  { transform: translate(0px, 2px) rotate(2deg) scaleX(-1); }
+  75%  { transform: translate(-1px, 0px) rotate(0.5deg) scaleX(-1); }
+  100% { transform: translate(0px, 2px) rotate(-2deg) scaleX(-1); }
+}
+
 /* Reunion-day mode: hide the SVG outline, show the emoji span instead. */
 .hero.reunion .big-number-svg { display: none; }
 .hero.reunion .big-number-emoji { display: inline-block; }
 .hero.reunion .big-number {
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.35));
 }
+
+/* ── View toggle (Liste / Kalender) ──────────────────────────────────── */
+
+.view-toggle {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin: 8px auto 4px;
+  padding: 4px;
+  background: var(--tile-bg);
+  border: 1px solid var(--tile-border);
+  border-radius: 999px;
+  width: fit-content;
+}
+
+.view-pill {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 7px 18px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 200ms ease, color 200ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.view-pill.active {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+/* ── Day grid (calendar style, M–S Mon-first weeks) ──────────────────── */
+
+.day-grid {
+  margin: 14px auto 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.grid-weekdays,
+.grid-cells {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+}
+
+.grid-weekdays {
+  margin-bottom: 6px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.grid-cell {
+  aspect-ratio: 1;
+  border-radius: 12px;
+  background: var(--tile-bg);
+  border: 1px solid var(--tile-border);
+  box-shadow: var(--tile-shadow);
+  display: grid;
+  place-items: center;
+  font-size: clamp(20px, 5.6vw, 26px);
+  position: relative;
+  transition: background-color 220ms ease, border-color 220ms ease, transform 220ms ease;
+  perspective: 600px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.grid-cell.empty {
+  background: transparent;
+  border: 1px dashed transparent;
+  box-shadow: none;
+  cursor: default;
+  pointer-events: none;
+}
+
+.grid-cell .grid-flip {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  transform-style: preserve-3d;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.grid-cell .grid-front,
+.grid-cell .grid-back {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  font-size: clamp(22px, 6vw, 30px);
+}
+
+.grid-cell .grid-front {
+  filter: grayscale(0.85) contrast(0.9);
+  opacity: 0.35;
+}
+
+.grid-cell .grid-back {
+  transform: rotateY(180deg);
+}
+
+.grid-cell.checked {
+  background: var(--tile-checked-bg);
+  border-color: var(--tile-checked-border);
+}
+.grid-cell.checked .grid-flip { transform: rotateY(180deg); }
+.grid-cell.checked .grid-back { transform: rotateY(180deg) scale(1.05); }
+
+.grid-cell.no-animate .grid-flip { transition: none !important; }
+
+.grid-cell.today {
+  outline: 2px solid var(--today-ring);
+  outline-offset: 2px;
+}
+.grid-cell.today:not(.checked) .grid-front {
+  animation: stampPulse var(--pulse-duration, 1.6s) ease-in-out infinite;
+}
+
+.grid-cell.tile-imminent {
+  background: linear-gradient(180deg, var(--tile-checked-bg), var(--tile-bg));
+  border-color: var(--accent);
+}
+.grid-cell.tile-imminent .grid-front {
+  filter: grayscale(0.4);
+  opacity: 0.55;
+}
+
+.grid-cell.fresh-stamp .grid-flip {
+  animation: stampFanfare 700ms cubic-bezier(0.2, 0.7, 0.2, 1.2);
+}
+
+.grid-cell.tile-pop .grid-flip {
+  animation: tileBouncy 350ms cubic-bezier(0.2, 0.7, 0.3, 1.3);
+}
+
+.grid-cell.peeking .grid-flip {
+  animation: stampPeek 600ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Body class flips which view is shown. */
+body.view-grid .day-list { display: none; }
+body:not(.view-grid) .day-grid { display: none; }
 
 /* ── Day list ─────────────────────────────────────────────────────────── */
 
@@ -290,8 +457,8 @@ body.intro-stage-b .hero-photo-calendar { opacity: 0; }
 .day.checked .stamp-flip { transform: rotateY(180deg); }
 
 .day.checked .stamp-back {
-  /* Match the prior look: tilted + slightly larger */
-  transform: rotateY(180deg) rotate(-6deg) scale(1.05);
+  /* Straight horizontal, slightly larger — matches the ghost orientation. */
+  transform: rotateY(180deg) scale(1.05);
 }
 
 /* Initial-render guard: no flip animation when the page first loads with
@@ -439,10 +606,16 @@ body.intro-stage-b .hero-photo-calendar { opacity: 0; }
 }
 
 @media (max-width: 380px) {
+  /* iPhone 13 mini and below */
+  main { padding: calc(16px + var(--safe-top)) 14px calc(32px + var(--safe-bot)); }
   .day { padding: 12px 12px; gap: 10px; }
   .day .date { font-size: 20px; min-width: 38px; }
   .day .weekday { font-size: 15px; }
   .day .stamp { width: 40px; height: 40px; font-size: 24px; }
+  .day .stamp-front, .day .stamp-back { font-size: 24px; }
+  .grid-weekdays, .grid-cells { gap: 4px; }
+  .view-pill { padding: 6px 14px; font-size: 13px; }
+  .big-label { font-size: 16px; }
 }
 
 /* ── Confetti rain ───────────────────────────────────────────────────── */
@@ -486,24 +659,68 @@ body.intro-stage-b .hero-photo-calendar { opacity: 0; }
   .confetti-layer { display: none; }
 }
 
-/* ── Pull-to-refresh truck indicator ─────────────────────────────────── */
+/* ── Pull-to-refresh: dramatic stage with comic text + big truck ─────── */
 
-.pull-truck {
+.pull-overlay {
   position: fixed;
-  top: -50px;
-  left: 50%;
-  transform: translate(-50%, 0) rotate(0deg);
-  font-size: 36px;
-  z-index: 7200;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(20, 6, 8, 0.95) 0%,
+    rgba(20, 6, 8, 0.85) 35%,
+    rgba(20, 6, 8, 0.55) 75%,
+    rgba(20, 6, 8, 0.25) 100%
+  );
   opacity: 0;
+  z-index: 7100;
+}
+
+.pull-stage {
+  position: fixed;
+  top: -180px;
+  left: 50%;
+  transform: translate(-50%, 0);
+  z-index: 7200;
   pointer-events: none;
   user-select: none;
-  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.35));
-  transition: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: min(380px, 88vw);
+  text-align: center;
+  opacity: 0;
 }
-.pull-truck.visible { opacity: 1; }
-.pull-truck.snap-back { transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease-out; }
-.pull-truck.driving-off { transition: transform 0.6s ease-in, opacity 0.6s ease-in; opacity: 1; }
+
+.pull-stage.visible { opacity: 1; }
+
+.pull-stage.snap-back,
+.pull-stage.snap-back ~ .pull-overlay { transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease-out; }
+.pull-overlay.snap-back { transition: opacity 0.3s ease-out; }
+
+.pull-stage.driving-off { transition: transform 0.6s ease-in, opacity 0.6s ease-in; }
+.pull-overlay.driving-off { transition: opacity 0.4s ease-in; }
+
+.pull-text {
+  font-family: "Bangers", "Permanent Marker", "Comic Sans MS", cursive;
+  font-size: clamp(20px, 5.5vw, 28px);
+  letter-spacing: 1.2px;
+  color: #ffffff;
+  -webkit-text-stroke: 2.5px var(--accent);
+  paint-order: stroke fill;
+  line-height: 1.05;
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.5));
+}
+
+.pull-truck {
+  font-size: clamp(48px, 14vw, 72px);
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.45));
+}
+
+main, .hero {
+  transition: opacity 120ms linear;
+}
 
 /* ── Pop-truck shower (tap on photo / checked tiles / midnight stamp) ──── */
 

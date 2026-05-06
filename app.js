@@ -75,10 +75,70 @@ function buildList() {
   }
   // Remove no-animate after the first paint so subsequent transitions animate.
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    document.querySelectorAll(".day.no-animate").forEach((el) =>
+    document.querySelectorAll(".day.no-animate, .grid-cell.no-animate").forEach((el) =>
       el.classList.remove("no-animate")
     );
   }));
+}
+
+// Build the calendar-grid view (Mon→Sun rows). May 5 2026 is a Tuesday, so
+// we prepend ONE empty cell before May 5; total 21 cells in 3 rows of 7.
+function buildGrid() {
+  const cells = document.getElementById("gridCells");
+  if (!cells) return;
+  cells.innerHTML = "";
+
+  // Compute Monday-based weekday for May 5 2026: Tue → 1 leading blank.
+  // (Pre-computed since the date range is fixed.)
+  const LEADING_BLANKS = 1;
+
+  for (let b = 0; b < LEADING_BLANKS; b++) {
+    const blank = document.createElement("div");
+    blank.className = "grid-cell empty";
+    cells.appendChild(blank);
+  }
+
+  for (let i = 0; i < TRIGGERS.length; i++) {
+    const day = FIRST_DAY + i;
+    const cell = document.createElement("div");
+    cell.className = "grid-cell no-animate";
+    cell.dataset.index = String(i);
+    cell.dataset.day = String(day);
+    cell.innerHTML = `
+      <div class="grid-flip">
+        <div class="grid-front">🚒</div>
+        <div class="grid-back">🚒</div>
+      </div>
+    `;
+    cells.appendChild(cell);
+  }
+}
+
+// View-toggle (Liste / Kalender) with localStorage persistence.
+function setupViewToggle() {
+  const toggle = document.getElementById("viewToggle");
+  if (!toggle) return;
+  const KEY = "brandbil-view";
+  const params = new URLSearchParams(location.search);
+  const urlView = params.get("view");
+  const saved = (() => { try { return localStorage.getItem(KEY); } catch (_) { return null; } })();
+  applyView((urlView === "grid" || (urlView !== "table" && saved === "grid")) ? "grid" : "table");
+
+  toggle.addEventListener("click", (e) => {
+    const btn = e.target.closest(".view-pill");
+    if (!btn) return;
+    const view = btn.dataset.view;
+    applyView(view);
+    try { localStorage.setItem(KEY, view); } catch (_) {}
+    tap("light");
+  });
+
+  function applyView(view) {
+    document.body.classList.toggle("view-grid", view === "grid");
+    toggle.querySelectorAll(".view-pill").forEach((p) => {
+      p.classList.toggle("active", p.dataset.view === view);
+    });
+  }
 }
 
 function rainFireTrucks() {
@@ -121,16 +181,16 @@ function tap(intensity) {
   try { if (navigator.vibrate) navigator.vibrate(ms); } catch (_) {}
 }
 
-// ── Shared "pop a shower of fire-trucks at this point" helper ────────────
+// ── Shared "pop a shower of an emoji at this point" helper ───────────────
 let _popCount = 0;
-function popTrucks(originX, originY, count = 5) {
+function popEmojis(originX, originY, count = 5, emoji = "🚒") {
   if (prefersReducedMotion()) return;
-  // Cap concurrent trucks to avoid runaway DOM.
+  // Cap concurrent items to avoid runaway DOM.
   if (_popCount > 30) return;
   for (let i = 0; i < count; i++) {
     const truck = document.createElement("div");
     truck.className = "pop-truck";
-    truck.textContent = "🚒";
+    truck.textContent = emoji;
     // Random angle in the upper hemisphere (mostly upward).
     const angle = (-Math.PI / 2) + ((Math.random() - 0.5) * (Math.PI * 0.9));
     const distance = 60 + Math.random() * 80; // 60–140px
@@ -246,25 +306,21 @@ const HEADER_OVERRIDES = {
   1:  "I morgen 💛🚒",
 };
 function headerCopy(unchecked) {
-  const txt = HEADER_OVERRIDES[unchecked] ?? pluralDays(unchecked);
-  // Always include the "driving" truck unless the override already has one.
-  if (/🚒|🎉/.test(txt)) return txt;
-  return `${txt} <span class="truck">🚒</span>`;
+  // Strip any 🚒 from override text — we always frame with our own animated trucks.
+  let txt = HEADER_OVERRIDES[unchecked] ?? pluralDays(unchecked);
+  txt = txt.replace(/\s*🚒\s*/g, " ").trim();
+  return `<span class="truck">🚒</span> ${txt} <span class="truck mirror">🚒</span>`;
 }
 
-// Format a time-to-trigger duration as Danish text.
-//   > 1 hour  → "stempler om 4t 23m"
-//   < 1 hour  → "stempler om 47m"
-//   < 1 min   → "stempler om 38s"
+// Format a time-to-trigger duration as Danish text — bare units, live seconds.
+//   "5t 51m 23s"
 function formatTimeUntilStamp(msUntil) {
-  if (msUntil <= 0) return "stempler nu …";
+  if (msUntil <= 0) return "0t 0m 0s";
   const totalSeconds = Math.floor(msUntil / 1000);
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
-  if (h > 0) return `stempler om ${h}t ${m}m`;
-  if (m > 0) return `stempler om ${m}m`;
-  return `stempler om ${s}s`;
+  return `${h}t ${m}m ${s}s`;
 }
 
 // Pulse duration scaled to time-until-trigger (in ms). Calmer when far,
@@ -295,10 +351,12 @@ function render() {
   const currChecked = new Set();
   const freshlyStamped = [];
 
-  // Update tiles.
-  const tiles = document.querySelectorAll(".day");
+  // Update both views in lockstep (table .day and grid .grid-cell).
+  const tableTiles = document.querySelectorAll(".day");
+  const gridCells  = document.querySelectorAll(".grid-cell:not(.empty)");
   let unchecked = 0;
-  tiles.forEach((tile) => {
+
+  tableTiles.forEach((tile) => {
     const i = +tile.dataset.index;
     const day = +tile.dataset.day;
     const checked = now >= TRIGGERS[i];
@@ -327,6 +385,25 @@ function render() {
     }
   });
 
+  // Grid view mirrors the same state. Don't double-fire fanfare — that's
+  // handled on the table tile then we ALSO play it on the grid cell here.
+  gridCells.forEach((cell) => {
+    const i = +cell.dataset.index;
+    const day = +cell.dataset.day;
+    const checked = now >= TRIGGERS[i];
+    cell.classList.toggle("checked", checked);
+    const isToday = today.y === 2026 && today.m === 5 && today.d === day;
+    cell.classList.toggle("today", isToday);
+    if (isToday && !checked) {
+      const msUntil = TRIGGERS[i] - now;
+      cell.style.setProperty("--pulse-duration", pulseDurationFor(msUntil));
+      cell.classList.toggle("tile-imminent", msUntil > 0 && msUntil <= TEN_MIN);
+    } else {
+      cell.style.removeProperty("--pulse-duration");
+      cell.classList.remove("tile-imminent");
+    }
+  });
+
   // Update header.
   const hero = document.querySelector(".hero");
   const bigText = document.querySelector("#bigNumber .big-number-svg text");
@@ -346,23 +423,31 @@ function render() {
   }
 
   // Fire midnight fanfare for any tiles that just transitioned to checked.
-  freshlyStamped.forEach(fanfare);
+  freshlyStamped.forEach((tile) => {
+    fanfare(tile);
+    // Also kick the matching grid cell.
+    const i = tile.dataset.index;
+    const cell = document.querySelector(`.grid-cell[data-index="${i}"]`);
+    if (cell) bounceFlip(cell);
+  });
   _prevChecked = currChecked;
+}
+
+function bounceFlip(el) {
+  el.classList.remove("fresh-stamp");
+  void el.offsetWidth;
+  el.classList.add("fresh-stamp");
+  setTimeout(() => el.classList.remove("fresh-stamp"), 750);
 }
 
 function fanfare(tile) {
   // 1. Bouncy stamp animation (extra punch on top of the regular flip).
-  tile.classList.remove("fresh-stamp");
-  void tile.offsetWidth;
-  tile.classList.add("fresh-stamp");
-  setTimeout(() => tile.classList.remove("fresh-stamp"), 750);
+  bounceFlip(tile);
 
   // 2. Mini fire-truck shower from the stamp's centre.
-  const stamp = tile.querySelector(".stamp");
-  if (stamp) {
-    const c = elementCentre(stamp);
-    popTrucks(c.x, c.y, 10);
-  }
+  const stamp = tile.querySelector(".stamp") || tile;
+  const c = elementCentre(stamp);
+  popEmojis(c.x, c.y, 10);
 
   // 3. Soft red full-screen flash.
   const flash = document.createElement("div");
@@ -374,27 +459,50 @@ function fanfare(tile) {
   tap("heavy");
 }
 
-// Custom pull-to-refresh: drag a fire-truck down from the top of the page;
+// Custom pull-to-refresh: dark overlay + page fade + big truck + comic text;
 // release past threshold triggers a real reload (full intro replays).
 function setupPullToRefresh() {
   if (prefersReducedMotion()) return;
 
-  const truck = document.createElement("div");
-  truck.className = "pull-truck";
-  truck.textContent = "🚒";
-  truck.setAttribute("aria-hidden", "true");
-  document.body.appendChild(truck);
+  const overlay = document.createElement("div");
+  overlay.className = "pull-overlay";
+  overlay.setAttribute("aria-hidden", "true");
+  document.body.appendChild(overlay);
+
+  const stage = document.createElement("div");
+  stage.className = "pull-stage";
+  stage.setAttribute("aria-hidden", "true");
+  stage.innerHTML = `
+    <div class="pull-text">RE-FRESH FOR ANOTHER<br>ROUND OF CHEESY INTRO</div>
+    <div class="pull-truck">🚒</div>
+  `;
+  document.body.appendChild(stage);
+
+  const main = document.querySelector("main");
 
   const THRESHOLD = 100;
-  const MAX_PULL = 160;
+  const MAX_PULL = 220;
   let startY = 0;
   let pullDistance = 0;
   let pulling = false;
   let triggered = false;
 
-  function setTruck(y, rotation = 0) {
-    // Truck is positioned at top: -50px; translateY moves it down.
-    truck.style.transform = `translate(-50%, ${y + 50}px) rotate(${rotation}deg)`;
+  function setStage(y, rotation = 0) {
+    stage.style.transform = `translate(-50%, ${y + 180}px) rotate(${rotation}deg)`;
+  }
+
+  function setOpacity(progress) {
+    const eased = Math.min(1, progress);
+    overlay.style.opacity = (eased * 0.92).toFixed(3);
+    if (main) main.style.opacity = (1 - eased * 0.7).toFixed(3);
+  }
+
+  function reset() {
+    stage.classList.remove("visible", "snap-back", "driving-off");
+    overlay.classList.remove("snap-back", "driving-off");
+    stage.style.transform = "";
+    overlay.style.opacity = "";
+    if (main) main.style.opacity = "";
   }
 
   function onTouchStart(e) {
@@ -403,38 +511,40 @@ function setupPullToRefresh() {
     startY = e.touches[0].clientY;
     pulling = true;
     pullDistance = 0;
-    truck.classList.remove("snap-back", "driving-off");
+    stage.classList.remove("snap-back", "driving-off");
+    overlay.classList.remove("snap-back", "driving-off");
   }
 
   function onTouchMove(e) {
     if (!pulling || triggered) return;
     pullDistance = Math.max(0, e.touches[0].clientY - startY);
-    if (pullDistance > 0 && window.scrollY === 0) {
-      // Prevent default vertical bounce so our truck moves smoothly.
-      // (Only when we're actually pulling at the top.)
-      if (pullDistance > 8) e.preventDefault();
+    if (pullDistance > 0 && window.scrollY === 0 && pullDistance > 8) {
+      e.preventDefault();
     }
     const visualY = Math.min(pullDistance, MAX_PULL);
-    if (visualY > 6) truck.classList.add("visible");
-    const rotation = (visualY / MAX_PULL) * 12;
-    setTruck(visualY, rotation);
+    if (visualY > 6) stage.classList.add("visible");
+    const rotation = (visualY / MAX_PULL) * 8;
+    setStage(visualY, rotation);
+    setOpacity(visualY / THRESHOLD);
   }
 
   function onTouchEnd() {
     if (!pulling) return;
     pulling = false;
     if (pullDistance > THRESHOLD && !triggered) {
-      // Drive truck off the bottom of the screen, then reload.
       triggered = true;
       tap("medium");
-      truck.classList.add("driving-off");
-      setTruck(window.innerHeight + 80, 18);
+      stage.classList.add("driving-off");
+      overlay.classList.add("driving-off");
+      setStage(window.innerHeight + 200, 16);
+      setOpacity(1);
       setTimeout(() => location.reload(), 500);
     } else {
-      // Snap back up.
-      truck.classList.add("snap-back");
-      setTruck(0, 0);
-      setTimeout(() => truck.classList.remove("visible", "snap-back"), 360);
+      stage.classList.add("snap-back");
+      overlay.classList.add("snap-back");
+      setStage(0, 0);
+      setOpacity(0);
+      setTimeout(reset, 380);
     }
     pullDistance = 0;
   }
@@ -465,15 +575,15 @@ function setupPhotoEasterEgg() {
     circle.classList.remove("bouncing");
     void circle.offsetWidth;
     circle.classList.add("bouncing");
-    popTrucks(x, y, 5);
+    popEmojis(x, y, 5, "🧀");
     tap("light");
 
-    // Long-press: keep emitting trucks at intervals until release.
+    // Long-press: keep emitting cheese at intervals until release.
     longPressTimer = setTimeout(() => {
       tap("medium");
       longPressInterval = setInterval(() => {
         const p = pointXY(lastEvent);
-        popTrucks(p.x, p.y, 3);
+        popEmojis(p.x, p.y, 3, "🧀");
       }, 200);
     }, 500);
   }
@@ -494,50 +604,61 @@ function setupPhotoEasterEgg() {
   circle.addEventListener("pointerleave", endTap);
 }
 
-// Tap-handler for the day list: today → peek + popover, checked → pop trucks.
+// Tap-handler for both views (table .day and grid .grid-cell). Today → peek
+// + popover + bubble rain. Checked → fire-truck pop shower.
 function handleTileTap(e) {
-  const tile = e.target.closest(".day");
-  if (!tile) return;
-  const stamp = tile.querySelector(".stamp");
-  if (!stamp) return;
-  const c = elementCentre(stamp);
+  const tile = e.target.closest(".day, .grid-cell");
+  if (!tile || tile.classList.contains("empty")) return;
+  const tileRect = tile.getBoundingClientRect();
+  const tileCentre = { x: tileRect.left + tileRect.width / 2, y: tileRect.top + tileRect.height / 2 };
 
   if (tile.classList.contains("checked")) {
-    popTrucks(c.x, c.y, 5);
+    popEmojis(tileCentre.x, tileCentre.y, 5);
     tap("light");
-    // Brief bounce on the stamp for tactile feedback.
     tile.classList.remove("tile-pop");
-    void tile.offsetWidth; // restart animation
+    void tile.offsetWidth;
     tile.classList.add("tile-pop");
     setTimeout(() => tile.classList.remove("tile-pop"), 380);
     return;
   }
 
   if (tile.classList.contains("today")) {
-    // Peek: brief door wiggle + popover.
+    // Peek: brief door wiggle.
     tile.classList.remove("peeking");
     void tile.offsetWidth;
     tile.classList.add("peeking");
     setTimeout(() => tile.classList.remove("peeking"), 620);
 
+    // Popover centred above the entire tile.
     const pop = document.createElement("div");
     pop.className = "peek-popover";
     pop.textContent = "POPPER VED MIDNAT 🚒";
-    const r = stamp.getBoundingClientRect();
-    pop.style.left = `${r.left + r.width / 2}px`;
-    pop.style.top = `${r.top}px`;
+    pop.style.left = `${tileCentre.x}px`;
+    pop.style.top  = `${tileRect.top - 8}px`;
     document.body.appendChild(pop);
     setTimeout(() => pop.remove(), 1700);
+
+    // Fire-truck bubble rain BEHIND the popover, lasting a touch longer.
+    const interval = setInterval(() => {
+      const r = tile.getBoundingClientRect();
+      popEmojis(r.left + r.width / 2, r.top + 24, 3);
+    }, 220);
+    setTimeout(() => clearInterval(interval), 1900);
+
     tap("light");
   }
 }
 
 function init() {
   buildList();
+  buildGrid();
+  setupViewToggle();
   render();
   playIntro();
   scheduleNextRender();
+  startCountdownTicker();
   document.getElementById("dayList").addEventListener("click", handleTileTap);
+  document.getElementById("dayGrid").addEventListener("click", handleTileTap);
   setupPhotoEasterEgg();
   setupPullToRefresh();
   // Also re-render when the page becomes visible again (e.g. after foregrounding the PWA).
@@ -546,20 +667,44 @@ function init() {
   });
 }
 
-// Adaptive interval: tick every second in the final minute before midnight,
-// every 15s in the last hour, otherwise every 30s.
+// Heavy render() runs on a slower cadence (full DOM walk).
 function scheduleNextRender() {
   const now = Date.now();
   const nextTrigger = TRIGGERS.find((t) => t > now);
   const msUntil = nextTrigger ? nextTrigger - now : Infinity;
   let delay;
-  if (msUntil <= 60 * 1000)        delay = 1000;
+  if (msUntil <= 60 * 1000)        delay = 1000;   // last minute: catch the transition fast
   else if (msUntil <= 60 * 60_000) delay = 15_000;
   else                              delay = 30_000;
   setTimeout(() => {
     render();
     scheduleNextRender();
   }, delay);
+}
+
+// Lightweight 1 Hz ticker — only updates today's countdown text + pulse rate.
+// Runs forever once started; bails when there's no today-tile or page is hidden.
+function startCountdownTicker() {
+  setInterval(() => {
+    if (document.hidden) return;
+    const now = Date.now();
+    const todayTile = document.querySelector(".day.today:not(.checked)");
+    if (!todayTile) return;
+    const i = +todayTile.dataset.index;
+    const msUntil = TRIGGERS[i] - now;
+    if (msUntil <= 0) return; // render() will fire fanfare on the next tick
+    const TEN_MIN = 10 * 60 * 1000;
+    const sub = todayTile.querySelector(".sub");
+    if (sub) sub.textContent = formatTimeUntilStamp(msUntil);
+    todayTile.style.setProperty("--pulse-duration", pulseDurationFor(msUntil));
+    todayTile.classList.toggle("tile-imminent", msUntil <= TEN_MIN);
+    // Mirror onto the grid cell.
+    const cell = document.querySelector(`.grid-cell[data-index="${i}"]`);
+    if (cell) {
+      cell.style.setProperty("--pulse-duration", pulseDurationFor(msUntil));
+      cell.classList.toggle("tile-imminent", msUntil <= TEN_MIN);
+    }
+  }, 1000);
 }
 
 if (document.readyState === "loading") {
