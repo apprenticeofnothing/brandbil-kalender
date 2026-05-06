@@ -47,25 +47,55 @@ function buildList() {
   list.innerHTML = "";
   for (let i = 0; i < TRIGGERS.length; i++) {
     const day = FIRST_DAY + i;
+    const daysLeft = LAST_DAY - day;
     const li = document.createElement("li");
     li.className = "day";
     li.dataset.index = String(i);
     li.dataset.day = String(day);
 
     const weekday = dayOfWeek(2026, 4, day);
-    const isReunion = day === 24;
+    const isReunion = day === LAST_DAY;
 
     li.innerHTML = `
-      <div class="date">${day}.</div>
+      <div class="date">${daysLeft}.</div>
       <div class="meta">
         <div class="weekday">${weekday}</div>
-        <div class="sub">${isReunion ? "Vi ses!" : "kl. 22:00"}</div>
+        <div class="sub">${day}. maj</div>
       </div>
       <div class="stamp" aria-hidden="true">🚒</div>
     `;
     if (isReunion) li.classList.add("reunion");
     list.appendChild(li);
   }
+}
+
+function rainFireTrucks() {
+  if (document.hidden) return;
+  const layer = document.createElement("div");
+  layer.className = "confetti-layer";
+  layer.setAttribute("aria-hidden", "true");
+  document.body.appendChild(layer);
+
+  const COUNT = 28;
+  let maxEnd = 0;
+  for (let i = 0; i < COUNT; i++) {
+    const t = document.createElement("div");
+    t.className = "confetti-truck";
+    t.textContent = "🚒";
+    t.style.left = (Math.random() * 100).toFixed(2) + "vw";
+    t.style.fontSize = (28 + Math.random() * 28).toFixed(0) + "px";
+    const delay = Math.random() * 0.9;
+    const dur = 1.6 + Math.random() * 2.0;
+    t.style.animationDelay = delay.toFixed(2) + "s";
+    t.style.animationDuration = dur.toFixed(2) + "s";
+    t.style.setProperty("--rot-start", (Math.random() * 360 - 180).toFixed(0) + "deg");
+    t.style.setProperty("--rot-end", (Math.random() * 720 - 360).toFixed(0) + "deg");
+    t.style.setProperty("--drift", (Math.random() * 80 - 40).toFixed(0) + "px");
+    layer.appendChild(t);
+    maxEnd = Math.max(maxEnd, delay + dur);
+  }
+
+  setTimeout(() => layer.remove(), (maxEnd + 0.2) * 1000);
 }
 
 function pluralDays(n) {
@@ -116,6 +146,7 @@ function render() {
 function init() {
   buildList();
   render();
+  rainFireTrucks();
   // Re-render every 60s so a tile flips when 22:00 passes while the page is open.
   setInterval(render, 60_000);
   // Also re-render when the page becomes visible again (e.g. after foregrounding the PWA).

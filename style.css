@@ -185,7 +185,7 @@ main {
   font-size: 22px;
   font-variant-numeric: tabular-nums;
   color: var(--fg);
-  min-width: 38px;
+  min-width: 44px;
   text-align: center;
 }
 
@@ -267,7 +267,48 @@ main {
 
 @media (max-width: 380px) {
   .day { padding: 12px 12px; gap: 10px; }
-  .day .date { font-size: 20px; min-width: 32px; }
+  .day .date { font-size: 20px; min-width: 38px; }
   .day .weekday { font-size: 15px; }
   .day .stamp { width: 40px; height: 40px; font-size: 24px; }
+}
+
+/* ── Confetti rain ───────────────────────────────────────────────────── */
+
+.confetti-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 9999;
+}
+
+.confetti-truck {
+  position: absolute;
+  top: -15vh;
+  transform-origin: center;
+  animation-name: truckFall;
+  animation-timing-function: cubic-bezier(0.45, 0.05, 0.55, 1);
+  animation-fill-mode: forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes truckFall {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(var(--rot-start, 0deg));
+    opacity: 0;
+  }
+  6% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(var(--drift, 0px), 130vh, 0) rotate(var(--rot-end, 360deg));
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confetti-layer { display: none; }
 }
