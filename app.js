@@ -122,7 +122,8 @@ function setupViewToggle() {
   const params = new URLSearchParams(location.search);
   const urlView = params.get("view");
   const saved = (() => { try { return localStorage.getItem(KEY); } catch (_) { return null; } })();
-  applyView((urlView === "grid" || (urlView !== "table" && saved === "grid")) ? "grid" : "table");
+  // Default = grid (Kalender). Liste is the secondary opt-in.
+  applyView((urlView === "table" || (urlView !== "grid" && saved === "table")) ? "table" : "grid");
 
   toggle.addEventListener("click", (e) => {
     const btn = e.target.closest(".view-pill");
@@ -292,7 +293,9 @@ function playIntro() {
 }
 
 function pluralDays(n) {
-  return n === 1 ? "1 dag tilbage" : `${n} dage tilbage`;
+  // Number is shown via the big-number outline in the photo circle, so the
+  // sub-line just reads "dag tilbage" / "dage tilbage" below it.
+  return n === 1 ? "dag tilbage" : "dage tilbage";
 }
 
 // Personalised header copy at milestone counts. Edit freely.

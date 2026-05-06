@@ -157,14 +157,14 @@ body.intro-stage-b .hero-photo-calendar { opacity: 0; }
 }
 
 .big-number-svg text {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
-  font-weight: 700;
-  font-size: 96px;
-  letter-spacing: -3;
+  font-family: "Bangers", "Permanent Marker", "Comic Sans MS", cursive;
+  font-weight: 400;
+  font-size: 110px;
+  letter-spacing: 1;
   font-variant-numeric: tabular-nums;
   fill: none;
-  stroke: #ffffff;
-  stroke-width: 3;
+  stroke: var(--accent);
+  stroke-width: 4;
   stroke-linejoin: round;
   paint-order: stroke fill;
 }
