@@ -16,20 +16,20 @@
 
   <link rel="apple-touch-icon" href="icon-180.png">
   <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
-  <link rel="manifest" href="manifest.webmanifest?v=5">
+  <link rel="manifest" href="manifest.webmanifest?v=6">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bangers&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
   <main>
     <header class="hero">
       <div class="title">Brandbil Countdown Kalender</div>
       <div class="hero-circle" id="heroCircle">
-        <img src="photo.jpg?v=5" alt="" class="hero-photo" decoding="async">
+        <img src="photo.jpg?v=6" alt="" class="hero-photo" decoding="async">
         <div class="big-number" id="bigNumber" aria-live="polite">
           <svg class="big-number-svg" viewBox="0 0 200 120" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
             <text x="100" y="60" text-anchor="middle" dominant-baseline="central">–</text>
@@ -37,7 +37,10 @@
           <span class="big-number-emoji" aria-hidden="true">🚒</span>
         </div>
       </div>
-      <div class="big-label" id="bigLabel">indlæser…</div>
+      <div class="hero-label-stack" id="heroLabelStack">
+        <div class="big-label" id="bigLabel">indlæser…</div>
+        <div class="hero-label-bridge" id="heroLabelBridge" aria-hidden="true">TIL MIN SØDESTE VEN</div>
+      </div>
     </header>
 
     <ol class="day-list" id="dayList" aria-label="Dage"></ol>
@@ -47,6 +50,6 @@
     </footer>
   </main>
 
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>

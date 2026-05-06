@@ -332,8 +332,12 @@ main {
 .intro-stage {
   z-index: 6000;
   display: grid;
-  place-items: center;
-  padding: 24px;
+  align-items: start;
+  justify-items: center;
+  padding-top: clamp(40px, 12vh, 90px);
+  padding-left: 24px;
+  padding-right: 24px;
+  padding-bottom: 24px;
 }
 
 .intro-bg.fade-out,
@@ -345,6 +349,9 @@ main {
   align-items: center;
   justify-items: center;
   width: min(560px, 92vw);
+  margin: 0 auto;
+  text-align: center;
+  transform: translateX(-2px); /* optical correction for Bangers' italic lean */
   gap: 4px;
 }
 
@@ -373,9 +380,8 @@ main {
   animation-timing-function: ease-out;
   overflow: visible;
 }
-.intro-curve.top.top-1 { animation-delay: 2.1s; }
-.intro-curve.top.top-2 { animation-delay: 2.3s; margin-top: -22px; }
-.intro-curve.bottom    { animation-delay: 2.5s; }
+.intro-curve.top    { animation-delay: 2.1s; }
+.intro-curve.bottom { animation-delay: 2.4s; }
 
 @keyframes curveFadeIn { to { opacity: 1; } }
 
@@ -384,8 +390,9 @@ main {
   font-size: 50px;
   letter-spacing: 1.5px;
   fill: #ffffff;
-  stroke: rgba(0, 0, 0, 0.6);
-  stroke-width: 0.8;
+  stroke: var(--accent);
+  stroke-width: 4;
+  stroke-linejoin: round;
   paint-order: stroke fill;
 }
 
@@ -393,3 +400,68 @@ main {
   /* Intro is also suppressed in JS, but if it ever slips through, kill it here too. */
   .intro-bg, .intro-stage { display: none; }
 }
+
+/* ── Hero-label cross-fade slot (stage B "TIL MIN SØDESTE VEN" ↔ stage C "X dage tilbage") */
+
+.hero-label-stack {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 64px;
+}
+.hero-label-stack > * {
+  grid-area: 1 / 1;     /* stack both labels in the same cell so they cross-fade */
+  width: 100%;
+}
+
+.hero-label-bridge {
+  font-family: "Bangers", "Permanent Marker", "Comic Sans MS", cursive;
+  font-size: clamp(28px, 7.5vw, 42px);
+  letter-spacing: 1.5px;
+  color: #ffffff;
+  -webkit-text-stroke: 2px var(--accent);
+  paint-order: stroke fill;
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0; /* hidden by default; only visible during stage B */
+}
+
+/* ── Three-stage intro state machine ─────────────────────────────────── */
+
+/* Smooth opacity transitions on every element that takes part in the reveal. */
+.title,
+.hero-circle,
+.big-number,
+.big-label,
+.hero-label-bridge,
+.day-list,
+.foot {
+  transition: opacity 0.6s ease-in-out;
+}
+
+/* Stage A — full curtain over the calendar; everything inside main hidden. */
+body.intro-stage-a .title,
+body.intro-stage-a .hero-circle,
+body.intro-stage-a .big-number,
+body.intro-stage-a .big-label,
+body.intro-stage-a .hero-label-bridge,
+body.intro-stage-a .day-list,
+body.intro-stage-a .foot {
+  opacity: 0;
+}
+
+/* Stage B — only the photo and the bridge text are visible. */
+body.intro-stage-b .title,
+body.intro-stage-b .big-number,
+body.intro-stage-b .big-label,
+body.intro-stage-b .day-list,
+body.intro-stage-b .foot {
+  opacity: 0;
+}
+body.intro-stage-b .hero-circle,
+body.intro-stage-b .hero-label-bridge {
+  opacity: 1;
+}
+
+/* No class (stage C / steady state): everything visible, bridge text invisible. */

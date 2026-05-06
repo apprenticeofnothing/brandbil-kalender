@@ -84,7 +84,7 @@ function rainFireTrucks() {
     t.textContent = "🚒";
     t.style.left = (Math.random() * 100).toFixed(2) + "vw";
     t.style.fontSize = (28 + Math.random() * 28).toFixed(0) + "px";
-    const delay = Math.random() * 2.0;
+    const delay = Math.random() * 3.0;
     const dur = 3.0 + Math.random() * 1.5;
     t.style.animationDelay = delay.toFixed(2) + "s";
     t.style.animationDuration = dur.toFixed(2) + "s";
@@ -107,7 +107,10 @@ function playIntro() {
   if (document.hidden) return;
   if (prefersReducedMotion()) return;
 
-  // Layer 1 — solid dark-red curtain hiding the calendar
+  // Stage A: hide the whole calendar behind the dark-red curtain.
+  document.body.classList.add("intro-stage-a");
+
+  // Layer 1 — solid dark-red curtain
   const bg = document.createElement("div");
   bg.className = "intro-bg";
   bg.setAttribute("aria-hidden", "true");
@@ -116,26 +119,18 @@ function playIntro() {
   // Layer 2 — confetti (raised z-index so it's between bg and stage)
   rainFireTrucks();
 
-  // Layer 3 — cheese + curved comic text, on top
+  // Layer 3 — cheese + "EN CHEESY-AS-FUCK" above + "COUNTDOWN KALENDER" below
   const stage = document.createElement("div");
   stage.className = "intro-stage";
   stage.setAttribute("aria-hidden", "true");
   stage.innerHTML = `
     <div class="intro-stage-inner">
-      <svg class="intro-curve top top-1" viewBox="0 0 560 130" preserveAspectRatio="xMidYMid meet">
+      <svg class="intro-curve top" viewBox="0 0 560 130" preserveAspectRatio="xMidYMid meet">
         <defs>
-          <path id="curveTop1" d="M 30,118 Q 280,4 530,118" fill="none"/>
+          <path id="curveTop" d="M 30,118 Q 280,4 530,118" fill="none"/>
         </defs>
         <text text-anchor="middle">
-          <textPath href="#curveTop1" startOffset="50%">EN CHEESY-AS-FUCK</textPath>
-        </text>
-      </svg>
-      <svg class="intro-curve top top-2" viewBox="0 0 560 130" preserveAspectRatio="xMidYMid meet">
-        <defs>
-          <path id="curveTop2" d="M 30,118 Q 280,38 530,118" fill="none"/>
-        </defs>
-        <text text-anchor="middle">
-          <textPath href="#curveTop2" startOffset="50%">COUNTDOWN KALENDER</textPath>
+          <textPath href="#curveTop" startOffset="50%">EN CHEESY-AS-FUCK</textPath>
         </text>
       </svg>
       <div class="intro-cheese" aria-hidden="true">🧀</div>
@@ -144,24 +139,30 @@ function playIntro() {
           <path id="curveBottom" d="M 30,12 Q 280,126 530,12" fill="none"/>
         </defs>
         <text text-anchor="middle">
-          <textPath href="#curveBottom" startOffset="50%">TIL MIN SØDESTE VEN</textPath>
+          <textPath href="#curveBottom" startOffset="50%">COUNTDOWN KALENDER</textPath>
         </text>
       </svg>
     </div>
   `;
   document.body.appendChild(stage);
 
-  // 5.5s — start fading the curtain + stage out
+  // 4.5s — Stage A → Stage B: photo + bridge text appear, curtain + cheese fade
   setTimeout(() => {
+    document.body.classList.replace("intro-stage-a", "intro-stage-b");
     bg.classList.add("fade-out");
     stage.classList.add("fade-out");
-  }, 5500);
+  }, 4500);
 
-  // 6.3s — fully gone, remove from DOM (confetti finishes on its own)
+  // 5.3s — curtain + cheese stage fully gone, remove from DOM
   setTimeout(() => {
     bg.remove();
     stage.remove();
-  }, 6300);
+  }, 5300);
+
+  // 6.5s — Stage B → Stage C: bridge fades out, rest of calendar fades in
+  setTimeout(() => {
+    document.body.classList.remove("intro-stage-b");
+  }, 6500);
 }
 
 function pluralDays(n) {
