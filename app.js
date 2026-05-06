@@ -76,7 +76,7 @@ function rainFireTrucks() {
   layer.setAttribute("aria-hidden", "true");
   document.body.appendChild(layer);
 
-  const COUNT = 28;
+  const COUNT = 36;
   let maxEnd = 0;
   for (let i = 0; i < COUNT; i++) {
     const t = document.createElement("div");
@@ -84,8 +84,8 @@ function rainFireTrucks() {
     t.textContent = "🚒";
     t.style.left = (Math.random() * 100).toFixed(2) + "vw";
     t.style.fontSize = (28 + Math.random() * 28).toFixed(0) + "px";
-    const delay = Math.random() * 0.9;
-    const dur = 1.6 + Math.random() * 2.0;
+    const delay = Math.random() * 2.0;
+    const dur = 3.0 + Math.random() * 1.5;
     t.style.animationDelay = delay.toFixed(2) + "s";
     t.style.animationDuration = dur.toFixed(2) + "s";
     t.style.setProperty("--rot-start", (Math.random() * 360 - 180).toFixed(0) + "deg");
@@ -96,6 +96,72 @@ function rainFireTrucks() {
   }
 
   setTimeout(() => layer.remove(), (maxEnd + 0.2) * 1000);
+}
+
+function prefersReducedMotion() {
+  return window.matchMedia &&
+         window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function playIntro() {
+  if (document.hidden) return;
+  if (prefersReducedMotion()) return;
+
+  // Layer 1 — solid dark-red curtain hiding the calendar
+  const bg = document.createElement("div");
+  bg.className = "intro-bg";
+  bg.setAttribute("aria-hidden", "true");
+  document.body.appendChild(bg);
+
+  // Layer 2 — confetti (raised z-index so it's between bg and stage)
+  rainFireTrucks();
+
+  // Layer 3 — cheese + curved comic text, on top
+  const stage = document.createElement("div");
+  stage.className = "intro-stage";
+  stage.setAttribute("aria-hidden", "true");
+  stage.innerHTML = `
+    <div class="intro-stage-inner">
+      <svg class="intro-curve top top-1" viewBox="0 0 560 130" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <path id="curveTop1" d="M 30,118 Q 280,4 530,118" fill="none"/>
+        </defs>
+        <text text-anchor="middle">
+          <textPath href="#curveTop1" startOffset="50%">EN CHEESY-AS-FUCK</textPath>
+        </text>
+      </svg>
+      <svg class="intro-curve top top-2" viewBox="0 0 560 130" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <path id="curveTop2" d="M 30,118 Q 280,38 530,118" fill="none"/>
+        </defs>
+        <text text-anchor="middle">
+          <textPath href="#curveTop2" startOffset="50%">COUNTDOWN KALENDER</textPath>
+        </text>
+      </svg>
+      <div class="intro-cheese" aria-hidden="true">🧀</div>
+      <svg class="intro-curve bottom" viewBox="0 0 560 130" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <path id="curveBottom" d="M 30,12 Q 280,126 530,12" fill="none"/>
+        </defs>
+        <text text-anchor="middle">
+          <textPath href="#curveBottom" startOffset="50%">TIL MIN SØDESTE VEN</textPath>
+        </text>
+      </svg>
+    </div>
+  `;
+  document.body.appendChild(stage);
+
+  // 5.5s — start fading the curtain + stage out
+  setTimeout(() => {
+    bg.classList.add("fade-out");
+    stage.classList.add("fade-out");
+  }, 5500);
+
+  // 6.3s — fully gone, remove from DOM (confetti finishes on its own)
+  setTimeout(() => {
+    bg.remove();
+    stage.remove();
+  }, 6300);
 }
 
 function pluralDays(n) {
@@ -146,7 +212,7 @@ function render() {
 function init() {
   buildList();
   render();
-  rainFireTrucks();
+  playIntro();
   // Re-render every 60s so a tile flips when 22:00 passes while the page is open.
   setInterval(render, 60_000);
   // Also re-render when the page becomes visible again (e.g. after foregrounding the PWA).

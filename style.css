@@ -279,7 +279,7 @@ main {
   inset: 0;
   pointer-events: none;
   overflow: hidden;
-  z-index: 9999;
+  z-index: 5500; /* between intro-bg (5000) and intro-stage (6000) */
 }
 
 .confetti-truck {
@@ -311,4 +311,85 @@ main {
 
 @media (prefers-reduced-motion: reduce) {
   .confetti-layer { display: none; }
+}
+
+/* ── Intro title-card ────────────────────────────────────────────────── */
+
+.intro-bg,
+.intro-stage {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.6s ease-in;
+}
+
+.intro-bg {
+  background: #1a0608; /* matches dark-mode --bg, opaque so it hides the calendar */
+  z-index: 5000;
+}
+
+.intro-stage {
+  z-index: 6000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.intro-bg.fade-out,
+.intro-stage.fade-out { opacity: 0; }
+
+.intro-stage-inner {
+  display: grid;
+  grid-template-rows: auto auto auto;
+  align-items: center;
+  justify-items: center;
+  width: min(560px, 92vw);
+  gap: 4px;
+}
+
+.intro-cheese {
+  font-size: clamp(140px, 42vw, 260px);
+  line-height: 1;
+  transform: scale(0);
+  animation: cheeseGrow 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.2) 1.5s forwards;
+  filter: drop-shadow(0 8px 22px rgba(0, 0, 0, 0.45));
+  user-select: none;
+}
+
+@keyframes cheeseGrow {
+  0%   { transform: scale(0); }
+  60%  { transform: scale(1.18); }
+  100% { transform: scale(1.0); }
+}
+
+.intro-curve {
+  width: 100%;
+  height: clamp(80px, 22vw, 130px);
+  opacity: 0;
+  animation-name: curveFadeIn;
+  animation-duration: 0.5s;
+  animation-fill-mode: forwards;
+  animation-timing-function: ease-out;
+  overflow: visible;
+}
+.intro-curve.top.top-1 { animation-delay: 2.1s; }
+.intro-curve.top.top-2 { animation-delay: 2.3s; margin-top: -22px; }
+.intro-curve.bottom    { animation-delay: 2.5s; }
+
+@keyframes curveFadeIn { to { opacity: 1; } }
+
+.intro-curve text {
+  font-family: "Bangers", "Permanent Marker", "Comic Sans MS", cursive;
+  font-size: 50px;
+  letter-spacing: 1.5px;
+  fill: #ffffff;
+  stroke: rgba(0, 0, 0, 0.6);
+  stroke-width: 0.8;
+  paint-order: stroke fill;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Intro is also suppressed in JS, but if it ever slips through, kill it here too. */
+  .intro-bg, .intro-stage { display: none; }
 }
