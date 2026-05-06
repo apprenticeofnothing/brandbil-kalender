@@ -84,8 +84,8 @@ function rainFireTrucks() {
     t.textContent = "🚒";
     t.style.left = (Math.random() * 100).toFixed(2) + "vw";
     t.style.fontSize = (28 + Math.random() * 28).toFixed(0) + "px";
-    const delay = Math.random() * 3.0;
-    const dur = 3.0 + Math.random() * 1.5;
+    const delay = Math.random() * 4.5;
+    const dur = 3.5 + Math.random() * 1.5;
     t.style.animationDelay = delay.toFixed(2) + "s";
     t.style.animationDuration = dur.toFixed(2) + "s";
     t.style.setProperty("--rot-start", (Math.random() * 360 - 180).toFixed(0) + "deg");
@@ -146,23 +146,28 @@ function playIntro() {
   `;
   document.body.appendChild(stage);
 
-  // 4.5s — Stage A → Stage B: photo + bridge text appear, curtain + cheese fade
+  // 4.5s — Stage A fade-out: cheese stage fades (curtain stays up; calendar still hidden)
   setTimeout(() => {
-    document.body.classList.replace("intro-stage-a", "intro-stage-b");
-    bg.classList.add("fade-out");
     stage.classList.add("fade-out");
   }, 4500);
 
-  // 5.3s — curtain + cheese stage fully gone, remove from DOM
+  // 5.8s — Stage B begins: 700ms blank-curtain pause has elapsed.
+  //        Curtain starts fading (1.0s) and body class flips so photo + bridge fade in (1.0s).
+  setTimeout(() => {
+    document.body.classList.replace("intro-stage-a", "intro-stage-b");
+    bg.classList.add("fade-out");
+    stage.remove(); // cheese stage is fully gone by now
+  }, 5800);
+
+  // 6.9s — curtain fully transparent, remove from DOM
   setTimeout(() => {
     bg.remove();
-    stage.remove();
-  }, 5300);
+  }, 6900);
 
-  // 6.5s — Stage B → Stage C: bridge fades out, rest of calendar fades in
+  // 8.3s — Stage B → Stage C: bridge fades out, rest of calendar fades in (1.0s each)
   setTimeout(() => {
     document.body.classList.remove("intro-stage-b");
-  }, 6500);
+  }, 8300);
 }
 
 function pluralDays(n) {

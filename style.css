@@ -321,8 +321,9 @@ main {
   inset: 0;
   pointer-events: none;
   opacity: 1;
-  transition: opacity 0.6s ease-in;
 }
+.intro-bg    { transition: opacity 1.0s ease-in-out; }
+.intro-stage { transition: opacity 0.6s ease-in; }
 
 .intro-bg {
   background: #1a0608; /* matches dark-mode --bg, opaque so it hides the calendar */
@@ -437,7 +438,7 @@ main {
 .hero-label-bridge,
 .day-list,
 .foot {
-  transition: opacity 0.6s ease-in-out;
+  transition: opacity 1.0s ease-in-out;
 }
 
 /* Stage A — full curtain over the calendar; everything inside main hidden. */
