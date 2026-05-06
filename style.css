@@ -102,19 +102,39 @@ main {
   display: grid;
   place-items: center;
   z-index: 2;
-  font-weight: 900;
-  font-size: clamp(140px, 44vw, 220px);
-  line-height: 1;
-  letter-spacing: -0.05em;
-  font-variant-numeric: tabular-nums;
-  /* Hollow / outlined: transparent fill so the photo shows through, white stroke for contrast */
-  color: transparent;
-  -webkit-text-stroke: 3px #ffffff;
-  text-stroke: 3px #ffffff;
-  /* Soft drop-shadow so the outline reads against any photo region */
-  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
   pointer-events: none;
   user-select: none;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
+}
+
+/* SVG-based outlined number — gives pixel-perfect strokes (no stroke-into-counter
+   artifacts that -webkit-text-stroke causes on heavy glyphs). */
+.big-number-svg {
+  display: block;
+  width: 62%;
+  height: auto;
+  overflow: visible;
+}
+
+.big-number-svg text {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 96px;
+  letter-spacing: -3;
+  font-variant-numeric: tabular-nums;
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 3;
+  stroke-linejoin: round;
+  paint-order: stroke fill;
+}
+
+/* Reunion mode swaps to a real emoji glyph (kept as HTML text so the emoji's
+   own colors render normally — emoji + SVG-stroke would hollow it out). */
+.big-number-emoji {
+  display: none;
+  font-size: clamp(96px, 30vw, 150px);
+  line-height: 1;
 }
 
 .big-label {
@@ -129,13 +149,10 @@ main {
   transform: translateY(2px);
 }
 
-/* Reunion-day mode: the number is replaced with a 🚒 emoji, so disable the
-   outline (otherwise the emoji would be hollowed out too). */
+/* Reunion-day mode: hide the SVG outline, show the emoji span instead. */
+.hero.reunion .big-number-svg { display: none; }
+.hero.reunion .big-number-emoji { display: inline-block; }
 .hero.reunion .big-number {
-  color: initial;
-  -webkit-text-stroke: 0;
-  text-stroke: 0;
-  font-size: clamp(110px, 34vw, 170px);
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.35));
 }
 

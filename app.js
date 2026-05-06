@@ -96,21 +96,19 @@ function render() {
 
   // Update header.
   const hero = document.querySelector(".hero");
-  const big = document.getElementById("bigNumber");
+  const bigText = document.querySelector("#bigNumber .big-number-svg text");
   const label = document.getElementById("bigLabel");
 
   if (isReunion) {
     hero.classList.add("reunion");
-    big.textContent = "🚒";
     label.innerHTML = "Vi ses i dag!";
   } else if (now >= NEXT_DAY_AFTER_REUNION_UTC) {
     // Past the whole window — keep something nice on screen.
     hero.classList.add("reunion");
-    big.textContent = "🚒";
     label.innerHTML = "Det var det! 💛";
   } else {
     hero.classList.remove("reunion");
-    big.textContent = String(unchecked);
+    bigText.textContent = String(unchecked);
     label.innerHTML = pluralDays(unchecked) + ` <span class="truck">🚒</span>`;
   }
 }

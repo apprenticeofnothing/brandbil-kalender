@@ -23,7 +23,12 @@
       <div class="title">Brandbil Countdown Kalender</div>
       <div class="hero-circle" id="heroCircle">
         <img src="photo.jpg" alt="" class="hero-photo" decoding="async">
-        <div class="big-number" id="bigNumber" aria-live="polite">–</div>
+        <div class="big-number" id="bigNumber" aria-live="polite">
+          <svg class="big-number-svg" viewBox="0 0 200 120" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+            <text x="100" y="60" text-anchor="middle" dominant-baseline="central">–</text>
+          </svg>
+          <span class="big-number-emoji" aria-hidden="true">🚒</span>
+        </div>
       </div>
       <div class="big-label" id="bigLabel">indlæser…</div>
     </header>
