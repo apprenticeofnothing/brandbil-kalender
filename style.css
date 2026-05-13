@@ -790,6 +790,164 @@ main, .hero {
   .pop-truck { display: none; }
 }
 
+/* ── Cheese-catching game modal ──────────────────────────────────────── */
+
+.game {
+  position: fixed;
+  inset: 0;
+  background: #14060a;
+  z-index: 9000;
+  overflow: hidden;
+  /* Respect notch / Dynamic Island when displayed */
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+body.game-open { overflow: hidden; }
+
+#gameCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none; /* we manage drag ourselves */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.game-close {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  right: 16px;
+  z-index: 4;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: rgba(0, 0, 0, 0.45);
+  color: #ffffff;
+  font-family: "Bangers", "Permanent Marker", "Comic Sans MS", cursive;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.game-hud {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 18px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  text-align: center;
+  pointer-events: none;
+}
+
+.game-count {
+  font-family: "Bangers", "Permanent Marker", "Comic Sans MS", cursive;
+  font-size: clamp(24px, 6vw, 32px);
+  letter-spacing: 1.2px;
+  color: #ffffff;
+  -webkit-text-stroke: 2px var(--accent);
+  paint-order: stroke fill;
+  white-space: nowrap;
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.4));
+}
+
+.game-count .truck { display: inline-block; animation: truckDrive 0.65s cubic-bezier(0.5, 0, 0.5, 1) infinite; transform-origin: center bottom; }
+.game-count .cheese { display: inline-block; animation: cheeseWobble 1.4s ease-in-out infinite; }
+
+@keyframes cheeseWobble {
+  0%, 100% { transform: translateY(0) rotate(-4deg); }
+  50%      { transform: translateY(-2px) rotate(4deg); }
+}
+
+.game-start {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  background: rgba(20, 6, 8, 0.55);
+  text-align: center;
+  padding: 24px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.game-start-title {
+  font-family: "Bangers", "Permanent Marker", "Comic Sans MS", cursive;
+  font-size: clamp(40px, 11vw, 64px);
+  letter-spacing: 1.5px;
+  color: #ffffff;
+  -webkit-text-stroke: 3px var(--accent);
+  paint-order: stroke fill;
+  margin-bottom: 16px;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
+}
+
+.game-start-sub {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  font-size: clamp(14px, 4vw, 17px);
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.4;
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+.game-win {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, rgba(20, 6, 8, 0) 0%, rgba(20, 6, 8, 0.55) 60%, rgba(20, 6, 8, 0.85) 100%);
+  text-align: center;
+  padding: 24px;
+  animation: gameWinIn 0.6s ease-out;
+}
+
+/* HTML5 [hidden] is overridden by display: grid above — re-assert it. */
+.game [hidden] { display: none !important; }
+
+@keyframes gameWinIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.game-win-title {
+  font-family: "Bangers", "Permanent Marker", "Comic Sans MS", cursive;
+  font-size: clamp(46px, 13vw, 80px);
+  letter-spacing: 1.5px;
+  color: #ffffff;
+  -webkit-text-stroke: 3px var(--accent);
+  paint-order: stroke fill;
+  line-height: 0.95;
+  margin-bottom: 24px;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.55));
+}
+
+.game-win-back {
+  appearance: none;
+  border: 3px solid var(--accent);
+  background: rgba(0, 0, 0, 0.5);
+  color: #ffffff;
+  font-family: "Bangers", "Permanent Marker", "Comic Sans MS", cursive;
+  font-size: 20px;
+  letter-spacing: 1px;
+  padding: 10px 24px;
+  border-radius: 999px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The "DAGE TILBAGE" label becomes tappable */
+.big-label { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  .game-count .truck,
+  .game-count .cheese { animation: none; }
+}
+
 /* ── Intro title-card ────────────────────────────────────────────────── */
 
 .intro-bg,

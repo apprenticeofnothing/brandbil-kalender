@@ -652,6 +652,23 @@ function handleTileTap(e) {
   }
 }
 
+// Tap the "DAGE TILBAGE" label to launch the cheese-catching game.
+function setupGameTrigger() {
+  const label = document.getElementById("bigLabel");
+  if (!label || typeof window.openCheeseGame !== "function") return;
+  label.addEventListener("click", () => {
+    const now = Date.now();
+    const remaining = TRIGGERS.filter((t) => t > now).length;
+    // No game on reunion day — nothing left to catch.
+    if (remaining <= 0) {
+      tap("light");
+      return;
+    }
+    tap("medium");
+    window.openCheeseGame(remaining);
+  });
+}
+
 function init() {
   buildList();
   buildGrid();
@@ -664,6 +681,7 @@ function init() {
   document.getElementById("dayGrid").addEventListener("click", handleTileTap);
   setupPhotoEasterEgg();
   setupPullToRefresh();
+  setupGameTrigger();
   // Also re-render when the page becomes visible again (e.g. after foregrounding the PWA).
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) render();
