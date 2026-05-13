@@ -1,27 +1,27 @@
-// Brandbil Cheese-Catching Game
-// Top-down highway, fire-truck driving toward camera. Player steers left/right
-// to catch cheese wedges. Catch all of them → truck drives into Copenhagen.
+// Brandbil Game — moving truck on a highway catches fire-trucks in soap
+// bubbles. Catch them all → truck drives into a recognisable Copenhagen
+// skyline. Berlin exit ramps spawn occasionally: pick the wrong lane and the
+// truck is forced off, ending the run — reset to zero.
 
 (function () {
-  const SECTION = document.getElementById("game");
-  const CANVAS  = document.getElementById("gameCanvas");
-  const HUD     = document.getElementById("gameCount");
-  const START   = document.getElementById("gameStart");
-  const WIN     = document.getElementById("gameWin");
-  const WIN_BTN = document.getElementById("gameWinBack");
-  const CLOSE   = document.getElementById("gameClose");
+  const SECTION  = document.getElementById("game");
+  const CANVAS   = document.getElementById("gameCanvas");
+  const HUD      = document.getElementById("gameCount");
+  const HUD_ROOT = document.getElementById("gameHud");
+  const START    = document.getElementById("gameStart");
+  const WIN      = document.getElementById("gameWin");
+  const WIN_BTN  = document.getElementById("gameWinBack");
+  const CLOSE    = document.getElementById("gameClose");
 
-  if (!SECTION || !CANVAS) return; // game DOM not present
+  if (!SECTION || !CANVAS) return;
 
   const ctx = CANVAS.getContext("2d");
-
-  // ───────────────────────────────────────────────────────────────────────
-  // Game state. Constructed when openGame() is called; reset between runs.
-  // ───────────────────────────────────────────────────────────────────────
   let state = null;
   let rafId = 0;
 
-  // Public API — called from app.js when the user taps "DAGE TILBAGE".
+  // ───────────────────────────────────────────────────────────────────────
+  // Public API
+  // ───────────────────────────────────────────────────────────────────────
   window.openCheeseGame = function (targetCatches) {
     SECTION.hidden = false;
     document.body.classList.add("game-open");
@@ -43,47 +43,67 @@
   CLOSE.addEventListener("click", closeGame);
   WIN_BTN.addEventListener("click", closeGame);
 
-  // Debug hook: ?game=N auto-opens with N cheeses to catch. Useful for screenshots.
-  const __gp = new URLSearchParams(location.search).get("game");
-  if (__gp !== null) {
-    const n = Math.max(1, Math.min(99, parseInt(__gp, 10) || 5));
-    // Defer one tick so the intro doesn't fight the game.
-    setTimeout(() => window.openCheeseGame(n), 50);
-  }
-
-  // Start overlay: tap anywhere to begin.
   START.addEventListener("pointerdown", (e) => {
     e.preventDefault();
     if (!state) return;
     state.phase = "playing";
     state.lastSpawn = performance.now();
+    state.lastObstacleSpawn = performance.now() + 4000; // grace period
     START.style.display = "none";
     haptic(12);
   });
+
+  // Debug hooks: ?game=N auto-opens with N targets. ?autostart=1 also skips
+  // the start overlay (useful for headless screenshots).
+  const __qp = new URLSearchParams(location.search);
+  const __gp = __qp.get("game");
+  if (__gp !== null) {
+    const n = Math.max(1, Math.min(99, parseInt(__gp, 10) || 5));
+    setTimeout(() => {
+      window.openCheeseGame(n);
+      if (__qp.get("autostart")) {
+        setTimeout(() => {
+          if (state && state.phase === "idle") {
+            state.phase = "playing";
+            state.lastSpawn = performance.now();
+            state.lastObstacleSpawn = performance.now() + 1500;
+            START.style.display = "none";
+          }
+        }, 100);
+      }
+    }, 50);
+  }
 
   // ───────────────────────────────────────────────────────────────────────
   // State
   // ───────────────────────────────────────────────────────────────────────
   function createState(target) {
     return {
-      phase: "idle",          // idle | playing | won
-      target,                 // number of cheeses needed
-      caught: 0,              // cheeses caught so far
-      truckX: 0.5,            // 0..1 across the road
-      cheeses: [],            // { x: 0..1, y: 0..1 (from horizon), size }
-      speed: 1.0,             // multiplier; grows with caught
-      roadOffset: 0,          // for dashed lane line scrolling
+      phase: "idle",            // idle | playing | losing | resetting | won
+      target,
+      caught: 0,
+      truckX: 0.5,
+      truckRot: 0,              // for lose animation
+      targets: [],              // soap-bubble firetrucks
+      obstacles: [],            // berlin exit ramps
+      poofs: [],                // particle bursts
+      speed: 1.0,
+      roadOffset: 0,
       lastSpawn: 0,
+      lastObstacleSpawn: 0,
       cssW: 0, cssH: 0, dpr: 1,
-      // Win sequence
-      winT: 0,                // 0..1, fills after victory
-      truckScale: 1,          // grows during win
-      skylineRise: 0,         // 0..1 how much the skyline has risen
+      winT: 0,
+      truckScale: 1,
+      skylineRise: 0,
+      loseT: 0,
+      loseSide: 0,              // -1 left, +1 right (which way truck exits)
+      resetT: 0,
+      hudPulse: 0,              // 1 right after a catch, fades to 0
     };
   }
 
   // ───────────────────────────────────────────────────────────────────────
-  // Canvas sizing (DPR-aware)
+  // Canvas sizing
   // ───────────────────────────────────────────────────────────────────────
   function fitCanvas() {
     const dpr = window.devicePixelRatio || 1;
@@ -100,7 +120,7 @@
   window.addEventListener("resize", () => { if (state) fitCanvas(); });
 
   // ───────────────────────────────────────────────────────────────────────
-  // Input — touch drag (continuous) + keyboard
+  // Input
   // ───────────────────────────────────────────────────────────────────────
   let pointerDownX = null;
   let pointerDownTruck = null;
@@ -116,7 +136,7 @@
     const dx = (e.clientX - pointerDownX) / roadWidthPx();
     state.truckX = clamp(pointerDownTruck + dx, 0.05, 0.95);
   });
-  function pointerUp() { pointerDownX = null; pointerDownTruck = null; }
+  const pointerUp = () => { pointerDownX = null; pointerDownTruck = null; };
   CANVAS.addEventListener("pointerup", pointerUp);
   CANVAS.addEventListener("pointercancel", pointerUp);
 
@@ -128,7 +148,6 @@
   });
 
   function roadWidthPx() { return state.cssW * 0.78; }
-  function roadLeftPx()  { return state.cssW * 0.11; }
 
   // ───────────────────────────────────────────────────────────────────────
   // Main loop
@@ -140,59 +159,80 @@
     lastNow = now;
 
     if (state.phase === "playing") updatePlaying(now, dt);
+    else if (state.phase === "losing") updateLosing(dt);
+    else if (state.phase === "resetting") updateResetting(dt);
     else if (state.phase === "won") updateWin(dt);
 
+    updateParticles(dt);
     render();
     updateHud();
     rafId = requestAnimationFrame(loop);
   }
 
   // ───────────────────────────────────────────────────────────────────────
-  // Update — playing
+  // Playing
   // ───────────────────────────────────────────────────────────────────────
   function updatePlaying(now, dt) {
-    // Speed multiplier: each catch adds 12%.
     const targetSpeed = 1 + 0.12 * state.caught;
-    state.speed += (targetSpeed - state.speed) * 0.08; // ease toward target
+    state.speed += (targetSpeed - state.speed) * 0.08;
 
-    // Scroll the lane markings.
     state.roadOffset = (state.roadOffset + 320 * state.speed * dt) % 60;
 
-    // Cheese fall: y goes 0 (horizon) → 1 (past truck).
-    const fallRate = 0.42 * state.speed; // y per second
-    for (const c of state.cheeses) c.y += fallRate * dt;
+    const fallRate = 0.42 * state.speed;
+    for (const t of state.targets)   t.y += fallRate * dt;
+    for (const o of state.obstacles) o.y += fallRate * dt;
 
-    // Spawn cheeses on a cadence that shortens with caught count.
+    // Spawn targets.
     const spawnEvery = Math.max(380, 1100 - 50 * state.caught);
     if (now - state.lastSpawn > spawnEvery) {
-      spawnCheese();
+      spawnTarget();
       state.lastSpawn = now;
     }
 
-    // Collision: truck is near the bottom (y ≈ 0.86). When a cheese passes
-    // through that band AND is horizontally close, mark as caught.
+    // Spawn obstacles — less frequent, never overlapping a target's row.
+    const obstacleEvery = Math.max(4500, 7000 - 200 * state.caught);
+    if (now - state.lastObstacleSpawn > obstacleEvery) {
+      spawnObstacle();
+      state.lastObstacleSpawn = now;
+    }
+
+    // Target collision (in the truck's hit-band).
     const TRUCK_Y = 0.86;
     const HIT_BAND_Y = 0.08;
     const HIT_X = 0.085;
-    for (const c of state.cheeses) {
-      if (c.caught || c.missed) continue;
-      if (c.y >= TRUCK_Y - HIT_BAND_Y && c.y <= TRUCK_Y + HIT_BAND_Y) {
-        if (Math.abs(c.x - state.truckX) < HIT_X) {
-          c.caught = true;
+    for (const t of state.targets) {
+      if (t.caught || t.missed) continue;
+      if (t.y >= TRUCK_Y - HIT_BAND_Y && t.y <= TRUCK_Y + HIT_BAND_Y) {
+        if (Math.abs(t.x - state.truckX) < HIT_X) {
+          t.caught = true;
           state.caught++;
-          haptic(12);
-          // burst a few cheese particles for delight
-          c.burst = 1;
+          haptic(15);
+          spawnPoof(t.x, t.y);
+          pulseHud();
         }
       }
-      if (c.y > 1.15) c.missed = true; // off screen
+      if (t.y > 1.15) t.missed = true;
     }
+    state.targets = state.targets.filter((t) => !t.missed && !t.caught);
 
-    // Drop completed cheeses.
-    state.cheeses = state.cheeses.filter((c) => !c.missed && (!c.caught || c.burst > 0));
-    for (const c of state.cheeses) if (c.caught) c.burst = Math.max(0, c.burst - dt * 3);
+    // Obstacle collision: when the ramp reaches the truck's Y, if the truck
+    // is on the same side, it's forced off.
+    for (const o of state.obstacles) {
+      if (o.triggered) continue;
+      if (o.y >= TRUCK_Y - 0.04) {
+        o.triggered = true;
+        const truckOnLeft  = state.truckX < 0.5;
+        const truckOnRight = state.truckX > 0.5;
+        if ((o.side === "left" && truckOnLeft) || (o.side === "right" && truckOnRight)) {
+          state.phase = "losing";
+          state.loseT = 0;
+          state.loseSide = o.side === "left" ? -1 : +1;
+          haptic(60);
+        }
+      }
+    }
+    state.obstacles = state.obstacles.filter((o) => o.y < 1.2);
 
-    // Win condition.
     if (state.caught >= state.target) {
       state.phase = "won";
       state.winT = 0;
@@ -200,38 +240,114 @@
     }
   }
 
-  function spawnCheese() {
-    // Three preferred lanes, with slight jitter.
+  function spawnTarget() {
     const lanes = [0.22, 0.5, 0.78];
     const lane = lanes[Math.floor(Math.random() * lanes.length)];
-    state.cheeses.push({
+    state.targets.push({
       x: clamp(lane + (Math.random() - 0.5) * 0.04, 0.08, 0.92),
       y: -0.05,
-      burst: 0,
+      phase: Math.random() * Math.PI * 2,   // hover phase
     });
   }
 
-  // ───────────────────────────────────────────────────────────────────────
-  // Update — won (Copenhagen reveal)
-  // ───────────────────────────────────────────────────────────────────────
-  function updateWin(dt) {
-    state.winT = Math.min(1, state.winT + dt / 2.4);
-    // Ease-out scrolling.
-    const t = state.winT;
-    state.speed = Math.max(0, state.speed * (1 - t) + 0 * t);
-    state.roadOffset = (state.roadOffset + 320 * state.speed * dt) % 60;
-    // Skyline rises.
-    state.skylineRise = easeOutCubic(t);
-    // Truck grows / drives forward.
-    state.truckScale = 1 + 0.3 * easeOutCubic(t);
+  function spawnObstacle() {
+    state.obstacles.push({
+      side: Math.random() < 0.5 ? "left" : "right",
+      y: -0.1,
+      triggered: false,
+    });
+  }
 
-    // After full transition, show the win UI.
-    if (t >= 0.98 && WIN.hidden) {
-      WIN.hidden = false;
+  function spawnPoof(x, y) {
+    const parts = [];
+    for (let i = 0; i < 14; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 60 + Math.random() * 90;
+      parts.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 30,
+        life: 1, // 1 → 0
+        size: 4 + Math.random() * 5,
+        hue: 200 + Math.random() * 60, // bluey-white bubble bits
+      });
+    }
+    state.poofs.push({ parts, ringT: 0 });
+  }
+
+  function pulseHud() {
+    state.hudPulse = 1.0;
+    if (HUD_ROOT) {
+      HUD_ROOT.classList.remove("pulse");
+      void HUD_ROOT.offsetWidth;
+      HUD_ROOT.classList.add("pulse");
+      setTimeout(() => HUD_ROOT.classList.remove("pulse"), 480);
     }
   }
 
+  function updateParticles(dt) {
+    for (const p of state.poofs) {
+      p.ringT = Math.min(1, p.ringT + dt * 3);
+      for (const part of p.parts) {
+        part.x += part.vx * dt * 0.0008; // x/y are normalized 0..1
+        part.y += part.vy * dt * 0.0008;
+        part.vy += 80 * dt * 0.0008;
+        part.life -= dt * 1.6;
+      }
+    }
+    state.poofs = state.poofs.filter((p) => p.parts.some((part) => part.life > 0));
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Losing — truck curves off onto the ramp, then we reset.
+  // ───────────────────────────────────────────────────────────────────────
+  function updateLosing(dt) {
+    state.loseT = Math.min(1, state.loseT + dt / 1.6);
+    const t = state.loseT;
+    // Truck slides toward the loseSide, rotating, and gradually drops out of frame.
+    state.truckX = clamp(state.truckX + state.loseSide * dt * 0.55, 0.0, 1.0);
+    state.truckRot = state.loseSide * easeInQuad(t) * 1.3; // radians
+    state.speed = Math.max(0, state.speed * (1 - t * 0.5));
+    state.roadOffset = (state.roadOffset + 320 * state.speed * dt) % 60;
+
+    if (t >= 1) {
+      state.phase = "resetting";
+      state.resetT = 0;
+      haptic(40);
+    }
+  }
+
+  function updateResetting(dt) {
+    state.resetT = Math.min(1, state.resetT + dt / 1.4);
+    if (state.resetT >= 1) {
+      // Wipe progress and show start screen again.
+      state.caught = 0;
+      state.targets = [];
+      state.obstacles = [];
+      state.poofs = [];
+      state.speed = 1.0;
+      state.truckX = 0.5;
+      state.truckRot = 0;
+      state.phase = "idle";
+      START.style.display = "";
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Win
+  // ───────────────────────────────────────────────────────────────────────
+  function updateWin(dt) {
+    state.winT = Math.min(1, state.winT + dt / 2.6);
+    const t = state.winT;
+    state.speed = Math.max(0, state.speed * (1 - t));
+    state.roadOffset = (state.roadOffset + 320 * state.speed * dt) % 60;
+    state.skylineRise = easeOutCubic(t);
+    state.truckScale = 1 + 0.3 * easeOutCubic(t);
+    if (t >= 0.98 && WIN.hidden) WIN.hidden = false;
+  }
+
   function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+  function easeInQuad(t)   { return t * t; }
 
   // ───────────────────────────────────────────────────────────────────────
   // Render
@@ -240,10 +356,10 @@
     const W = state.cssW;
     const H = state.cssH;
 
-    // Sky / horizon gradient
+    // Sky
     const sky = ctx.createLinearGradient(0, 0, 0, H * 0.55);
-    sky.addColorStop(0,  "#2a0d12");
-    sky.addColorStop(1,  "#7a1d2a");
+    sky.addColorStop(0, "#2a0d12");
+    sky.addColorStop(1, "#7a1d2a");
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, W, H * 0.55);
 
@@ -251,26 +367,75 @@
     ctx.fillStyle = "#1a0608";
     ctx.fillRect(0, H * 0.55, W, H * 0.45);
 
-    // Distant city silhouette during win (rises from below the horizon).
+    // Skyline (during win)
     if (state.skylineRise > 0) drawSkyline(W, H, state.skylineRise);
 
-    // Road (a trapezoid pointing to the horizon)
+    // Road (with any obstacle road-branches layered on top)
     drawRoad(W, H);
+    for (const o of state.obstacles) drawRoadBranch(o, W, H);
 
-    // Cheeses (perspective-scaled)
-    drawCheeses(W, H);
+    // Targets
+    for (const t of state.targets) drawTarget(t, W, H);
+
+    // Obstacles' signs (foreground)
+    for (const o of state.obstacles) drawObstacleSign(o, W, H);
 
     // Truck
     drawTruck(W, H);
+
+    // Poof particles (front-most)
+    drawPoofs(W, H);
+
+    // During reset, fade to black + reset flash
+    if (state.phase === "losing" || state.phase === "resetting") {
+      const a = state.phase === "losing"
+        ? state.loseT * 0.7
+        : 0.7 + state.resetT * 0.0; // hold
+      ctx.fillStyle = `rgba(20, 6, 8, ${a})`;
+      ctx.fillRect(0, 0, W, H);
+      // "TIL BERLIN!" message
+      const alpha = state.phase === "losing"
+        ? Math.max(0, (state.loseT - 0.2) / 0.8)
+        : 1 - state.resetT;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "#c8102e";
+      ctx.lineWidth = 5;
+      ctx.font = `${Math.min(W, H) * 0.13}px "Bangers", "Permanent Marker", "Comic Sans MS", cursive`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.strokeText("TIL BERLIN?!", W / 2, H / 2 - H * 0.04);
+      ctx.fillText("TIL BERLIN?!",   W / 2, H / 2 - H * 0.04);
+      ctx.font = `${Math.min(W, H) * 0.055}px "Bangers", "Permanent Marker", "Comic Sans MS", cursive`;
+      ctx.lineWidth = 3;
+      ctx.strokeText("(start forfra…)", W / 2, H / 2 + H * 0.05);
+      ctx.fillText("(start forfra…)",   W / 2, H / 2 + H * 0.05);
+      ctx.restore();
+    }
   }
 
+  // Coordinate mapping (perspective)
+  function laneToScreen(x, y, W, H) {
+    const horizonY = H * 0.55;
+    const bottomY  = H;
+    const t = clamp(y, 0, 1.1);
+    const screenY = horizonY + (bottomY - horizonY) * t;
+    const topWidth = W * 0.10;
+    const botWidth = W * 0.78;
+    const widthAtY = topWidth + (botWidth - topWidth) * t;
+    const screenX = W / 2 + (x - 0.5) * widthAtY;
+    const scale = 0.25 + 0.95 * t;
+    return { screenX, screenY, scale };
+  }
+
+  // ── Road ───────────────────────────────────────────────────────────────
   function drawRoad(W, H) {
     const horizonY = H * 0.55;
     const bottomY  = H;
     const topWidth = W * 0.10;
     const botWidth = W * 0.78;
 
-    // Asphalt trapezoid
     ctx.fillStyle = "#2c1418";
     ctx.beginPath();
     ctx.moveTo(W / 2 - topWidth / 2, horizonY);
@@ -280,7 +445,6 @@
     ctx.closePath();
     ctx.fill();
 
-    // Dashed centre line
     ctx.strokeStyle = "rgba(255, 240, 200, 0.85)";
     ctx.lineWidth = 6;
     ctx.setLineDash([24, 36]);
@@ -291,7 +455,6 @@
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Solid lane edges
     ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
     ctx.lineWidth = 3;
     ctx.beginPath();
@@ -302,128 +465,666 @@
     ctx.stroke();
   }
 
-  // Map a (x, y) where x is 0..1 across the road width and y is 0 (horizon)
-  // to 1 (past the truck) into screen coordinates with perspective.
-  function laneToScreen(x, y, W, H) {
+  // Branch road for the Berlin exit. We draw a curving extension of the
+  // asphalt that peels off the side at the obstacle's y position.
+  function drawRoadBranch(o, W, H) {
     const horizonY = H * 0.55;
     const bottomY  = H;
-    const t = clamp(y, 0, 1);
-    // Vertical position: linear from horizon to bottom.
-    const screenY = horizonY + (bottomY - horizonY) * t;
-    // Horizontal: lanes converge toward centre at the horizon.
+    if (o.y < 0) return;
+    const t = clamp(o.y, 0, 1);
+
+    // Where on the main road the branch starts (in screen coords).
+    const splitY = horizonY + (bottomY - horizonY) * t;
     const topWidth = W * 0.10;
     const botWidth = W * 0.78;
-    const widthAtY = topWidth + (botWidth - topWidth) * t;
-    const screenX = W / 2 + (x - 0.5) * widthAtY;
-    // Sprite scale: small near horizon, big near camera.
-    const scale = 0.25 + 0.95 * t;
-    return { screenX, screenY, scale };
+    const widthAtSplit = topWidth + (botWidth - topWidth) * t;
+    const halfAtSplit = widthAtSplit / 2;
+
+    // Branch direction: -1 for left, +1 for right.
+    const dir = o.side === "left" ? -1 : 1;
+
+    // Edge of main road at the split point.
+    const innerEdgeX = W / 2 + dir * halfAtSplit;
+
+    // The branch curves outward (off-screen) as it approaches the camera.
+    // Use a quadratic curve. Control point exaggerates the curl.
+    const exitX = W / 2 + dir * (W * 0.7);  // way off to the side, near bottom
+    const exitY = bottomY;
+    const ctrlX = W / 2 + dir * (halfAtSplit + W * 0.25);
+    const ctrlY = bottomY - H * 0.05;
+
+    // Outer edge of branch (further from main road).
+    const outerInnerX = W / 2 + dir * halfAtSplit;
+    const outerExitX  = W / 2 + dir * (W * 0.95);
+
+    ctx.fillStyle = "#2c1418";
+    ctx.beginPath();
+    ctx.moveTo(innerEdgeX, splitY);
+    ctx.quadraticCurveTo(ctrlX, ctrlY, exitX, exitY);
+    ctx.lineTo(outerExitX, exitY);
+    ctx.quadraticCurveTo(ctrlX + dir * W * 0.05, ctrlY - 10, outerInnerX + dir * 4, splitY - 2);
+    ctx.closePath();
+    ctx.fill();
+
+    // White edge stripe on the curve
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(innerEdgeX, splitY);
+    ctx.quadraticCurveTo(ctrlX, ctrlY, exitX, exitY);
+    ctx.stroke();
   }
 
-  function drawCheeses(W, H) {
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    for (const c of state.cheeses) {
-      const p = laneToScreen(c.x, c.y, W, H);
-      const size = 56 * p.scale;
-      ctx.save();
-      if (c.caught) {
-        ctx.globalAlpha = Math.max(0, c.burst);
-        ctx.translate(p.screenX, p.screenY - 24 * (1 - c.burst));
-        ctx.scale(1 + 0.6 * (1 - c.burst), 1 + 0.6 * (1 - c.burst));
-      } else {
-        ctx.translate(p.screenX, p.screenY);
-      }
-      ctx.font = `${size}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
-      ctx.fillText("🧀", 0, 0);
-      ctx.restore();
-    }
-  }
+  // ── Targets: fire-trucks in soap bubbles, hovering ────────────────────
+  function drawTarget(t, W, H) {
+    const p = laneToScreen(t.x, t.y, W, H);
+    const now = performance.now() / 1000;
+    const hover = Math.sin(now * 2.2 + t.phase) * 4 * p.scale;
+    const bobX = Math.cos(now * 1.7 + t.phase) * 2 * p.scale;
+    const screenX = p.screenX + bobX;
+    const screenY = p.screenY + hover;
+    const bubbleR = 30 * p.scale;
 
-  function drawTruck(W, H) {
-    const p = laneToScreen(state.truckX, 0.86, W, H);
-    const size = 96 * p.scale * state.truckScale;
     ctx.save();
-    ctx.translate(p.screenX, p.screenY);
-    // Subtle bounce
-    const bob = Math.sin(performance.now() / 60) * 1.5;
-    ctx.translate(0, bob);
-    ctx.font = `${size}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+    ctx.translate(screenX, screenY);
+
+    // Rainbow outer shimmer
+    const rainbow = ctx.createRadialGradient(0, 0, bubbleR * 0.6, 0, 0, bubbleR);
+    rainbow.addColorStop(0,    "rgba(255, 255, 255, 0)");
+    rainbow.addColorStop(0.68, "rgba(255, 200, 220, 0.10)");
+    rainbow.addColorStop(0.82, "rgba(180, 220, 255, 0.22)");
+    rainbow.addColorStop(0.96, "rgba(200, 240, 255, 0.55)");
+    rainbow.addColorStop(1,    "rgba(255, 255, 255, 0.85)");
+    ctx.fillStyle = rainbow;
+    ctx.beginPath();
+    ctx.arc(0, 0, bubbleR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Translucent fill
+    ctx.fillStyle = "rgba(190, 215, 255, 0.12)";
+    ctx.beginPath();
+    ctx.arc(0, 0, bubbleR * 0.96, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Fire-truck emoji inside
+    ctx.font = `${bubbleR * 1.15}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("🚒", 0, 0);
+    ctx.fillText("🚒", 0, 1);
+
+    // Top-left highlight (specular)
+    ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+    ctx.beginPath();
+    ctx.ellipse(-bubbleR * 0.36, -bubbleR * 0.42, bubbleR * 0.20, bubbleR * 0.10, -0.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Tiny secondary highlight
+    ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+    ctx.beginPath();
+    ctx.arc(-bubbleR * 0.18, -bubbleR * 0.58, bubbleR * 0.07, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.restore();
   }
 
+  // ── Berlin obstacle sign + post ───────────────────────────────────────
+  function drawObstacleSign(o, W, H) {
+    if (o.y < -0.05) return;
+    const sideX = o.side === "left" ? 0.05 : 0.95;
+    const p = laneToScreen(sideX, o.y, W, H);
+    const sz = 70 * p.scale;
+
+    ctx.save();
+    ctx.translate(p.screenX, p.screenY);
+
+    // Post
+    ctx.fillStyle = "#777";
+    ctx.fillRect(-sz * 0.04, -sz * 0.05, sz * 0.08, sz * 0.75);
+
+    // Sign panel (German-style: white with yellow background for autobahn)
+    ctx.fillStyle = "#f3c83d";
+    ctx.strokeStyle = "#1a1a1a";
+    ctx.lineWidth = sz * 0.04;
+    const sw = sz * 1.05, sh = sz * 0.55;
+    ctx.fillRect(-sw / 2, -sz * 0.6, sw, sh);
+    ctx.strokeRect(-sw / 2, -sz * 0.6, sw, sh);
+
+    // "BERLIN" text
+    ctx.fillStyle = "#1a1a1a";
+    ctx.font = `bold ${sz * 0.22}px Arial, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("BERLIN", 0, -sz * 0.4);
+    // Arrow
+    ctx.font = `bold ${sz * 0.28}px Arial, sans-serif`;
+    ctx.fillText(o.side === "left" ? "←" : "→", 0, -sz * 0.18);
+
+    ctx.restore();
+  }
+
+  // ── Truck — procedural top-down 3/4 perspective ──────────────────────
+  function drawTruck(W, H) {
+    const p = laneToScreen(state.truckX, 0.86, W, H);
+    const scale = p.scale * state.truckScale;
+    const size = 110 * scale;
+
+    ctx.save();
+    ctx.translate(p.screenX, p.screenY);
+    ctx.rotate(state.truckRot);
+
+    // Subtle road bounce
+    const bob = Math.sin(performance.now() / 60) * 1.2;
+    ctx.translate(0, bob);
+
+    // Ground shadow
+    ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+    ctx.beginPath();
+    ctx.ellipse(2, size * 0.42, size * 0.42, size * 0.10, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Dimensions
+    const cargoTopW = size * 0.42;    // narrower at front (perspective)
+    const cargoBotW = size * 0.5;     // wider at back
+    const cargoH    = size * 0.55;
+    const cabH      = size * 0.22;
+
+    // Wheels (drawn first so chassis covers their tops)
+    ctx.fillStyle = "#0e0e0e";
+    const wOff = size * 0.04;
+    const wW = size * 0.06, wH = size * 0.10;
+    // Rear wheels
+    rrect(-cargoBotW / 2 - wOff, cargoH * 0.05, wW, wH, 2);
+    rrect( cargoBotW / 2 - wW + wOff, cargoH * 0.05, wW, wH, 2);
+    // Front wheels (under cab)
+    rrect(-cargoTopW / 2 - wOff, -cargoH * 0.5 - cabH * 0.6, wW * 0.9, wH * 0.85, 2);
+    rrect( cargoTopW / 2 - wW + wOff, -cargoH * 0.5 - cabH * 0.6, wW * 0.9, wH * 0.85, 2);
+
+    // Cargo box — top surface (trapezoid)
+    const cargoGrad = ctx.createLinearGradient(0, -cargoH * 0.5, 0, cargoH * 0.5);
+    cargoGrad.addColorStop(0, "#5e89e6");
+    cargoGrad.addColorStop(1, "#3a6dd6");
+    ctx.fillStyle = cargoGrad;
+    ctx.beginPath();
+    ctx.moveTo(-cargoTopW / 2, -cargoH * 0.5);
+    ctx.lineTo( cargoTopW / 2, -cargoH * 0.5);
+    ctx.lineTo( cargoBotW / 2,  cargoH * 0.5);
+    ctx.lineTo(-cargoBotW / 2,  cargoH * 0.5);
+    ctx.closePath();
+    ctx.fill();
+
+    // Cargo box BACK face (visible band closest to camera)
+    const backH = size * 0.10;
+    ctx.fillStyle = "#27468a";
+    ctx.beginPath();
+    ctx.moveTo(-cargoBotW / 2, cargoH * 0.5);
+    ctx.lineTo( cargoBotW / 2, cargoH * 0.5);
+    ctx.lineTo( cargoBotW / 2 + size * 0.005, cargoH * 0.5 + backH);
+    ctx.lineTo(-cargoBotW / 2 - size * 0.005, cargoH * 0.5 + backH);
+    ctx.closePath();
+    ctx.fill();
+
+    // Roll-up door lines on the back
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 5; i++) {
+      const yy = cargoH * 0.5 + backH * (i / 5);
+      ctx.beginPath();
+      ctx.moveTo(-cargoBotW / 2 + 2, yy);
+      ctx.lineTo( cargoBotW / 2 - 2, yy);
+      ctx.stroke();
+    }
+    // Door handle
+    ctx.fillStyle = "#d0d0d0";
+    ctx.fillRect(-size * 0.02, cargoH * 0.5 + backH * 0.4, size * 0.04, backH * 0.2);
+
+    // Tail lights at the back corners
+    ctx.fillStyle = "#ff3a3a";
+    ctx.fillRect(-cargoBotW / 2 + size * 0.02, cargoH * 0.5 + backH * 0.65, size * 0.06, size * 0.025);
+    ctx.fillRect( cargoBotW / 2 - size * 0.08, cargoH * 0.5 + backH * 0.65, size * 0.06, size * 0.025);
+
+    // White stripe down the box top (decorative)
+    ctx.fillStyle = "rgba(255, 255, 255, 0.18)";
+    ctx.fillRect(-size * 0.015, -cargoH * 0.5, size * 0.03, cargoH);
+
+    // "CHEESE" label on box (Easter egg)
+    ctx.save();
+    ctx.fillStyle = "rgba(255, 240, 200, 0.85)";
+    ctx.font = `bold ${size * 0.075}px "Bangers", Arial, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("CHEESE", 0, 0);
+    ctx.restore();
+
+    // Cab — at the front, slightly narrower than cargo top
+    const cabW = cargoTopW * 0.94;
+    const cabTopW = cabW * 0.86;
+    const cabGrad = ctx.createLinearGradient(0, -cargoH * 0.5 - cabH, 0, -cargoH * 0.5);
+    cabGrad.addColorStop(0, "#2d558c");
+    cabGrad.addColorStop(1, "#27468a");
+    ctx.fillStyle = cabGrad;
+    ctx.beginPath();
+    ctx.moveTo(-cabTopW / 2, -cargoH * 0.5 - cabH);
+    ctx.lineTo( cabTopW / 2, -cargoH * 0.5 - cabH);
+    ctx.lineTo( cabW / 2,    -cargoH * 0.5);
+    ctx.lineTo(-cabW / 2,    -cargoH * 0.5);
+    ctx.closePath();
+    ctx.fill();
+
+    // Windshield
+    ctx.fillStyle = "rgba(170, 220, 245, 0.85)";
+    ctx.beginPath();
+    ctx.moveTo(-cabTopW / 2 + size * 0.025, -cargoH * 0.5 - cabH * 0.82);
+    ctx.lineTo( cabTopW / 2 - size * 0.025, -cargoH * 0.5 - cabH * 0.82);
+    ctx.lineTo( cabW / 2    - size * 0.03,  -cargoH * 0.5 - cabH * 0.32);
+    ctx.lineTo(-cabW / 2    + size * 0.03,  -cargoH * 0.5 - cabH * 0.32);
+    ctx.closePath();
+    ctx.fill();
+
+    // Windshield reflection (subtle stripe)
+    ctx.fillStyle = "rgba(255, 255, 255, 0.18)";
+    ctx.beginPath();
+    ctx.moveTo(-cabTopW / 2 + size * 0.04, -cargoH * 0.5 - cabH * 0.78);
+    ctx.lineTo( cabTopW / 2 - size * 0.04, -cargoH * 0.5 - cabH * 0.78);
+    ctx.lineTo( cabW / 2    - size * 0.05, -cargoH * 0.5 - cabH * 0.6);
+    ctx.lineTo(-cabW / 2    + size * 0.05, -cargoH * 0.5 - cabH * 0.6);
+    ctx.closePath();
+    ctx.fill();
+
+    // Headlights at the very front
+    ctx.fillStyle = "#fff2a8";
+    ctx.fillRect(-cabTopW / 2 + size * 0.04, -cargoH * 0.5 - cabH - size * 0.022, size * 0.07, size * 0.028);
+    ctx.fillRect( cabTopW / 2 - size * 0.11, -cargoH * 0.5 - cabH - size * 0.022, size * 0.07, size * 0.028);
+
+    // Grille
+    ctx.fillStyle = "#0e0e0e";
+    ctx.fillRect(-cabTopW * 0.18, -cargoH * 0.5 - cabH - size * 0.015, cabTopW * 0.36, size * 0.018);
+
+    ctx.restore();
+  }
+
+  // Small rounded-rect helper using current fillStyle.
+  function rrect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // ── Poof particles ───────────────────────────────────────────────────
+  function drawPoofs(W, H) {
+    for (const p of state.poofs) {
+      // Expanding ring
+      if (p.ringT < 1) {
+        const origin = p.parts[0];
+        const ring = laneToScreen(origin.x, origin.y, W, H);
+        const ringR = 12 + p.ringT * 60;
+        ctx.save();
+        ctx.globalAlpha = 1 - p.ringT;
+        ctx.strokeStyle = "rgba(255, 240, 200, 0.7)";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(ring.screenX, ring.screenY, ringR * ring.scale, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+      // Particles
+      for (const part of p.parts) {
+        if (part.life <= 0) continue;
+        const sp = laneToScreen(part.x, part.y, W, H);
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, part.life);
+        ctx.fillStyle = `hsl(${part.hue}, 90%, 80%)`;
+        ctx.beginPath();
+        ctx.arc(sp.screenX, sp.screenY, part.size * sp.scale, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+
   // ───────────────────────────────────────────────────────────────────────
-  // Copenhagen skyline — procedurally drawn silhouette
+  // Copenhagen skyline — real landmarks
   // ───────────────────────────────────────────────────────────────────────
   function drawSkyline(W, H, rise) {
     const baseY = H * 0.55;
-    const peakY = H * 0.18;
-    const verticalRange = (baseY - peakY) * rise;
-    const y0 = baseY - verticalRange;
+    const peakY = H * 0.13;
+    const vRange = (baseY - peakY) * rise;
+    const baselineY = baseY;
+    const factor = vRange / (baseY - peakY);
 
-    // Warm sunset glow behind the skyline (only visible during win).
-    const glow = ctx.createLinearGradient(0, y0 - 60, 0, baseY);
-    glow.addColorStop(0,  "rgba(255, 180, 120, 0)");
-    glow.addColorStop(1,  "rgba(255, 120, 90, 0.35)");
+    // Warm sunset behind
+    const glow = ctx.createLinearGradient(0, baselineY - vRange - 80, 0, baselineY);
+    glow.addColorStop(0,    "rgba(255, 200, 140, 0)");
+    glow.addColorStop(0.5,  "rgba(255, 170, 120, 0.4)");
+    glow.addColorStop(1,    "rgba(255, 110, 80, 0.5)");
     ctx.fillStyle = glow;
-    ctx.fillRect(0, y0 - 60, W, baseY - (y0 - 60));
+    ctx.fillRect(0, baselineY - vRange - 80, W, vRange + 80);
 
-    // Silhouette path — a stylised Copenhagen waterfront.
-    // x positions are proportional to W; y values are measured upward from baseY.
-    const buildings = [
-      { x: 0.05, w: 0.08, h: 0.20, type: "block" },
-      { x: 0.13, w: 0.05, h: 0.45, type: "spire" },     // Christiansborg-ish
-      { x: 0.20, w: 0.10, h: 0.30, type: "block" },
-      { x: 0.30, w: 0.04, h: 0.60, type: "tower" },     // Rundetårn-ish
-      { x: 0.35, w: 0.12, h: 0.25, type: "block" },
-      { x: 0.49, w: 0.06, h: 0.75, type: "crane" },     // harbour crane
-      { x: 0.56, w: 0.09, h: 0.35, type: "block" },
-      { x: 0.65, w: 0.05, h: 0.55, type: "spire" },     // Nikolaj-ish
-      { x: 0.71, w: 0.10, h: 0.28, type: "block" },
-      { x: 0.82, w: 0.05, h: 0.65, type: "tower" },     // another tower
-      { x: 0.88, w: 0.08, h: 0.22, type: "block" },
-    ];
+    // Far cloud band
+    ctx.fillStyle = "rgba(255, 220, 200, 0.15)";
+    for (let i = 0; i < 5; i++) {
+      ctx.beginPath();
+      ctx.ellipse(W * (i + 0.5) / 5, baselineY - vRange - 30, W * 0.12, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
-    ctx.fillStyle = "rgba(20, 6, 8, 0.95)";
-    ctx.strokeStyle = "rgba(20, 6, 8, 1)";
-    for (const b of buildings) {
-      const x = b.x * W;
-      const w = b.w * W;
-      const h = b.h * verticalRange;
-      const top = baseY - h;
-      if (b.type === "block") {
-        ctx.fillRect(x, top, w, h);
-        // Window dots
-        ctx.fillStyle = "rgba(255, 220, 150, 0.7)";
-        for (let yy = top + 8; yy < baseY - 8; yy += 10) {
-          for (let xx = x + 4; xx < x + w - 4; xx += 8) {
-            if (Math.random() < 0.4) ctx.fillRect(xx, yy, 2, 3);
-          }
-        }
-        ctx.fillStyle = "rgba(20, 6, 8, 0.95)";
-      } else if (b.type === "spire") {
-        ctx.fillRect(x, top, w, h);
-        ctx.beginPath();
-        ctx.moveTo(x - 2, top);
-        ctx.lineTo(x + w / 2, top - h * 0.25);
-        ctx.lineTo(x + w + 2, top);
-        ctx.closePath();
-        ctx.fill();
-      } else if (b.type === "tower") {
-        ctx.fillRect(x, top, w, h);
-        // Onion dome top
-        ctx.beginPath();
-        ctx.arc(x + w / 2, top, w * 0.7, Math.PI, 0);
-        ctx.closePath();
-        ctx.fill();
-      } else if (b.type === "crane") {
-        // Vertical mast
-        ctx.fillRect(x + w * 0.4, top, w * 0.2, h);
-        // Horizontal arm
-        ctx.fillRect(x - w * 0.4, top, w * 1.4, h * 0.08);
+    if (factor < 0.05) return;
+
+    // Layout — each function takes its base position and a "scale unit" derived
+    // from W and vRange. Building heights are fractions of vRange.
+    const u = vRange / 0.65; // unit so heights look right at full rise
+
+    // From left to right:
+    drawNyhavnRow(W * 0.00, baselineY, W * 0.16, u, ["#e8b54f", "#c84738"]);
+    drawDragonSpire( W * 0.17, baselineY, W * 0.09, u);
+    drawChristiansborg(W * 0.27, baselineY, W * 0.10, u);
+    drawCityHall(    W * 0.38, baselineY, W * 0.10, u);
+    drawRundetaarn(  W * 0.50, baselineY, W * 0.07, u);
+    drawMarbleChurch(W * 0.58, baselineY, W * 0.14, u);
+    drawNyhavnRow(W * 0.74, baselineY, W * 0.26, u, ["#3a6e9c", "#e87b3a", "#c84738", "#e8b54f"]);
+  }
+
+  // Row of Nyhavn-coloured townhouses.
+  function drawNyhavnRow(x, baseY, w, u, colors) {
+    const n = colors.length;
+    const houseW = w / n;
+    for (let i = 0; i < n; i++) {
+      const hx = x + i * houseW;
+      const h = u * (0.22 + (i % 2) * 0.04 + Math.random() * 0); // stable
+      const houseH = u * (0.22 + (i % 2 === 0 ? 0.04 : 0));
+      drawNyhavnHouse(hx + houseW * 0.05, baseY, houseW * 0.9, houseH, colors[i]);
+    }
+  }
+
+  function drawNyhavnHouse(x, baseY, w, h, color) {
+    const top = baseY - h;
+    // Facade
+    ctx.fillStyle = color;
+    ctx.fillRect(x, top, w, h);
+    // Slightly darker facade shadow on right edge
+    ctx.fillStyle = "rgba(0, 0, 0, 0.18)";
+    ctx.fillRect(x + w - w * 0.06, top, w * 0.06, h);
+    // Pointed roof
+    ctx.fillStyle = "#2d1a18";
+    ctx.beginPath();
+    ctx.moveTo(x - 1, top + 1);
+    ctx.lineTo(x + w / 2, top - h * 0.22);
+    ctx.lineTo(x + w + 1, top + 1);
+    ctx.closePath();
+    ctx.fill();
+    // Tiny chimney
+    ctx.fillRect(x + w * 0.65, top - h * 0.18, w * 0.07, h * 0.14);
+    // Windows (warm yellow)
+    ctx.fillStyle = "rgba(255, 220, 140, 0.85)";
+    const cols = 2;
+    const rows = Math.max(2, Math.floor(h / (w * 0.5)));
+    const winW = w * 0.22;
+    const winH = Math.min(h * 0.14, w * 0.22);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const wx = x + w * (0.18 + c * 0.42);
+        const wy = top + h * 0.12 + r * h * 0.22;
+        if (wy + winH > baseY - h * 0.18) continue;
+        ctx.fillRect(wx, wy, winW, winH);
+        // cross frame
+        ctx.fillStyle = "rgba(80, 50, 30, 0.7)";
+        ctx.fillRect(wx + winW / 2 - 0.5, wy, 1, winH);
+        ctx.fillRect(wx, wy + winH / 2 - 0.5, winW, 1);
+        ctx.fillStyle = "rgba(255, 220, 140, 0.85)";
+      }
+    }
+    // Door at the bottom centre
+    ctx.fillStyle = "#3a1b14";
+    ctx.fillRect(x + w * 0.42, top + h * 0.78, w * 0.16, h * 0.22);
+  }
+
+  // Børsen — distinctive dragon spire (4 dragons' tails twisted).
+  function drawDragonSpire(x, baseY, w, u) {
+    const baseH = u * 0.30;
+    const spireH = u * 0.55;
+    const top = baseY - baseH;
+
+    // Sandstone base
+    const grad = ctx.createLinearGradient(x, top, x, baseY);
+    grad.addColorStop(0, "#e0c08c");
+    grad.addColorStop(1, "#b89a68");
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, top, w, baseH);
+    // Roof of base
+    ctx.fillStyle = "#7a5538";
+    ctx.beginPath();
+    ctx.moveTo(x - 2, top);
+    ctx.lineTo(x + w / 2, top - baseH * 0.22);
+    ctx.lineTo(x + w + 2, top);
+    ctx.closePath();
+    ctx.fill();
+    // Windows on base
+    ctx.fillStyle = "rgba(255, 220, 140, 0.7)";
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) {
+        ctx.fillRect(x + w * (0.18 + c * 0.28), top + baseH * (0.2 + r * 0.22), w * 0.12, baseH * 0.12);
+      }
+    }
+
+    // Twisted spire — sinusoidal silhouette
+    const spireBase = top - baseH * 0.22;
+    const spireTop  = spireBase - spireH;
+    ctx.fillStyle = "#a8835a";
+    ctx.beginPath();
+    const segments = 30;
+    let prevX = x + w / 2 - 2;
+    ctx.moveTo(prevX, spireBase);
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments;
+      const yy = spireBase + (spireTop - spireBase) * t;
+      const taper = (1 - t) * w * 0.16 + 2;
+      const wobble = Math.sin(t * Math.PI * 6) * w * 0.08 * (1 - t * 0.6);
+      ctx.lineTo(x + w / 2 + wobble - taper, yy);
+    }
+    for (let i = segments; i >= 0; i--) {
+      const t = i / segments;
+      const yy = spireBase + (spireTop - spireBase) * t;
+      const taper = (1 - t) * w * 0.16 + 2;
+      const wobble = Math.sin(t * Math.PI * 6) * w * 0.08 * (1 - t * 0.6);
+      ctx.lineTo(x + w / 2 + wobble + taper, yy);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // Crown at the tip
+    ctx.fillStyle = "#daa520";
+    ctx.fillRect(x + w * 0.45, spireTop - 3, w * 0.1, 4);
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.45, spireTop - 3);
+    ctx.lineTo(x + w * 0.50, spireTop - u * 0.04);
+    ctx.lineTo(x + w * 0.55, spireTop - 3);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Christiansborg tower — tall stone tower with copper-green spire + crown.
+  function drawChristiansborg(x, baseY, w, u) {
+    const h = u * 0.62;
+    const top = baseY - h;
+
+    // Tower body
+    const grad = ctx.createLinearGradient(x, top, x, baseY);
+    grad.addColorStop(0, "#cfc3a8");
+    grad.addColorStop(1, "#9c8d70");
+    ctx.fillStyle = grad;
+    ctx.fillRect(x + w * 0.18, top, w * 0.64, h);
+
+    // Lower wing
+    ctx.fillStyle = "#9c8d70";
+    ctx.fillRect(x, baseY - h * 0.45, w, h * 0.45);
+
+    // Windows
+    ctx.fillStyle = "rgba(255, 220, 140, 0.7)";
+    for (let r = 0; r < 5; r++) {
+      ctx.fillRect(x + w * 0.30, top + h * (0.15 + r * 0.15), w * 0.10, h * 0.06);
+      ctx.fillRect(x + w * 0.60, top + h * (0.15 + r * 0.15), w * 0.10, h * 0.06);
+    }
+
+    // Copper-green spire at top
+    const spireH = h * 0.35;
+    const sx = x + w * 0.5;
+    ctx.fillStyle = "#5c8c75";
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.30, top);
+    ctx.lineTo(x + w * 0.70, top);
+    ctx.lineTo(sx, top - spireH);
+    ctx.closePath();
+    ctx.fill();
+
+    // Crown on top
+    ctx.fillStyle = "#daa520";
+    ctx.beginPath();
+    ctx.arc(sx, top - spireH, w * 0.06, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Rundetårn — cylindrical red brick with white conical hat + observation deck.
+  function drawRundetaarn(x, baseY, w, u) {
+    const h = u * 0.52;
+    const top = baseY - h;
+
+    // Cylinder body
+    const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+    grad.addColorStop(0,    "#7a3a28");
+    grad.addColorStop(0.5,  "#a04c34");
+    grad.addColorStop(1,    "#6a3220");
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, top + h * 0.08, w, h * 0.92);
+
+    // Top observation deck
+    ctx.fillStyle = "#d8c8a8";
+    ctx.fillRect(x - w * 0.08, top + h * 0.04, w * 1.16, h * 0.08);
+
+    // Conical hat
+    ctx.fillStyle = "#e8e0c8";
+    ctx.beginPath();
+    ctx.moveTo(x - w * 0.08, top + h * 0.04);
+    ctx.lineTo(x + w / 2, top - h * 0.15);
+    ctx.lineTo(x + w * 1.08, top + h * 0.04);
+    ctx.closePath();
+    ctx.fill();
+
+    // Hat trim
+    ctx.fillStyle = "#a08c64";
+    ctx.fillRect(x - w * 0.08, top + h * 0.02, w * 1.16, 3);
+
+    // Small windows on the cylinder
+    ctx.fillStyle = "rgba(255, 220, 140, 0.7)";
+    for (let r = 0; r < 4; r++) {
+      ctx.beginPath();
+      ctx.arc(x + w * 0.3, top + h * (0.25 + r * 0.18), w * 0.06, 0, Math.PI * 2);
+      ctx.arc(x + w * 0.7, top + h * (0.25 + r * 0.18), w * 0.06, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Marble Church — huge green-copper dome with columned drum.
+  function drawMarbleChurch(x, baseY, w, u) {
+    const drumH = u * 0.18;
+    const drumY = baseY - drumH;
+
+    // Drum (column base)
+    ctx.fillStyle = "#e5dccb";
+    ctx.fillRect(x + w * 0.05, drumY, w * 0.9, drumH);
+    // Columns
+    ctx.strokeStyle = "rgba(80, 60, 40, 0.45)";
+    ctx.lineWidth = 1.5;
+    for (let i = 1; i < 8; i++) {
+      ctx.beginPath();
+      ctx.moveTo(x + w * (0.05 + (0.9 * i / 8)), drumY);
+      ctx.lineTo(x + w * (0.05 + (0.9 * i / 8)), drumY + drumH);
+      ctx.stroke();
+    }
+    // Frieze
+    ctx.fillStyle = "rgba(80, 60, 40, 0.3)";
+    ctx.fillRect(x + w * 0.05, drumY, w * 0.9, drumH * 0.1);
+
+    // Dome — large green copper
+    const domeR = w * 0.42;
+    const domeCx = x + w / 2;
+    const domeCy = drumY;
+    const domeGrad = ctx.createRadialGradient(domeCx - domeR * 0.3, domeCy - domeR * 0.3, domeR * 0.2, domeCx, domeCy, domeR);
+    domeGrad.addColorStop(0, "#a8d4b8");
+    domeGrad.addColorStop(0.6, "#6ea088");
+    domeGrad.addColorStop(1, "#3a6e5a");
+    ctx.fillStyle = domeGrad;
+    ctx.beginPath();
+    ctx.arc(domeCx, domeCy, domeR, Math.PI, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    // Lantern + cross on top
+    const lanY = domeCy - domeR - u * 0.04;
+    ctx.fillStyle = "#e5dccb";
+    ctx.fillRect(domeCx - w * 0.04, lanY, w * 0.08, u * 0.04);
+    ctx.fillStyle = "#daa520";
+    ctx.fillRect(domeCx - 1, lanY - u * 0.05, 2, u * 0.05);
+    ctx.fillRect(domeCx - u * 0.012, lanY - u * 0.035, u * 0.024, 2);
+  }
+
+  // City Hall tower — tall red brick rectangle with clock.
+  function drawCityHall(x, baseY, w, u) {
+    const h = u * 0.70;
+    const top = baseY - h;
+    const tw = w * 0.55;
+    const tx = x + (w - tw) / 2;
+
+    // Lower main building
+    ctx.fillStyle = "#7a3422";
+    ctx.fillRect(x, baseY - h * 0.35, w, h * 0.35);
+
+    // Tower body
+    const grad = ctx.createLinearGradient(tx, top, tx + tw, top);
+    grad.addColorStop(0,   "#7a3422");
+    grad.addColorStop(0.5, "#9c4530");
+    grad.addColorStop(1,   "#6a2c1c");
+    ctx.fillStyle = grad;
+    ctx.fillRect(tx, top, tw, h);
+
+    // Clock face
+    const clockCx = tx + tw / 2;
+    const clockCy = top + h * 0.30;
+    const clockR  = tw * 0.30;
+    ctx.fillStyle = "#f3d96a";
+    ctx.beginPath();
+    ctx.arc(clockCx, clockCy, clockR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.4)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // Hands
+    ctx.strokeStyle = "#1a1a1a";
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(clockCx, clockCy);
+    ctx.lineTo(clockCx + clockR * 0.6, clockCy);
+    ctx.moveTo(clockCx, clockCy);
+    ctx.lineTo(clockCx, clockCy - clockR * 0.8);
+    ctx.stroke();
+
+    // Pyramid roof
+    ctx.fillStyle = "#2d2218";
+    ctx.beginPath();
+    ctx.moveTo(tx - 2, top);
+    ctx.lineTo(tx + tw / 2, top - tw * 0.55);
+    ctx.lineTo(tx + tw + 2, top);
+    ctx.closePath();
+    ctx.fill();
+
+    // Wing windows
+    ctx.fillStyle = "rgba(255, 220, 140, 0.65)";
+    for (let r = 0; r < 2; r++) {
+      for (let c = 0; c < 6; c++) {
+        ctx.fillRect(x + w * (0.05 + c * 0.15), baseY - h * 0.3 + r * h * 0.12, w * 0.08, h * 0.06);
       }
     }
   }
@@ -435,7 +1136,7 @@
     if (!state) return;
     const remaining = Math.max(0, state.target - state.caught);
     const word = remaining === 1 ? "dag" : "dage";
-    HUD.innerHTML = `<span class="truck">🚒</span> ${remaining} ${word} <span class="cheese">🧀</span>`;
+    HUD.innerHTML = `<span class="truck">🚒</span> ${remaining} ${word} <span class="bubble">🫧</span>`;
   }
 
   // ───────────────────────────────────────────────────────────────────────
