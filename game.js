@@ -48,7 +48,8 @@
     if (!state) return;
     state.phase = "playing";
     state.lastSpawn = performance.now();
-    state.lastObstacleSpawn = performance.now() + 4000; // grace period
+    state.lastObstacleSpawn = performance.now() - 1500; // first obstacle in ~2 s
+    state.lastObstacleSide = null;
     START.style.display = "none";
     haptic(12);
   });
@@ -189,9 +190,9 @@
       state.lastSpawn = now;
     }
 
-    // Spawn obstacles — less frequent, never overlapping a target's row.
-    const obstacleEvery = Math.max(4500, 7000 - 200 * state.caught);
-    if (now - state.lastObstacleSpawn > obstacleEvery) {
+    // Spawn obstacles — more frequent, alternating sides. Only one at a time.
+    const obstacleEvery = Math.max(2000, 3800 - 200 * state.caught);
+    if (now - state.lastObstacleSpawn > obstacleEvery && state.obstacles.length === 0) {
       spawnObstacle();
       state.lastObstacleSpawn = now;
     }
@@ -251,11 +252,19 @@
   }
 
   function spawnObstacle() {
+    // 60% chance to alternate from the last spawn; otherwise pick randomly.
+    let side;
+    if (state.lastObstacleSide && Math.random() < 0.6) {
+      side = state.lastObstacleSide === "left" ? "right" : "left";
+    } else {
+      side = Math.random() < 0.5 ? "left" : "right";
+    }
     state.obstacles.push({
-      side: Math.random() < 0.5 ? "left" : "right",
-      y: -0.1,
+      side,
+      y: -0.05,
       triggered: false,
     });
+    state.lastObstacleSide = side;
   }
 
   function spawnPoof(x, y) {
@@ -370,14 +379,13 @@
     // Skyline (during win)
     if (state.skylineRise > 0) drawSkyline(W, H, state.skylineRise);
 
-    // Road (with any obstacle road-branches layered on top)
+    // Road (split + danger ramp baked in based on active obstacle)
     drawRoad(W, H);
-    for (const o of state.obstacles) drawRoadBranch(o, W, H);
 
     // Targets
     for (const t of state.targets) drawTarget(t, W, H);
 
-    // Obstacles' signs (foreground)
+    // Obstacles' signs (foreground, on the side of the road)
     for (const o of state.obstacles) drawObstacleSign(o, W, H);
 
     // Truck
@@ -430,89 +438,267 @@
   }
 
   // ── Road ───────────────────────────────────────────────────────────────
+  // Perspective trapezoid from horizonY → bottomY. When an obstacle is on
+  // the road, the road FORKS at the obstacle's y:
+  //  - Below the fork (between truck and fork — closer to camera): full road
+  //  - Above the fork (beyond the fork — further away): only the SAFE lane
+  //    continues to the horizon; the DANGER lane curves off the road, going
+  //    UP and outward to the side of the screen.
   function drawRoad(W, H) {
     const horizonY = H * 0.55;
     const bottomY  = H;
     const topWidth = W * 0.10;
     const botWidth = W * 0.78;
 
+    const o = activeObstacle();
+
+    // ── 1. Asphalt of main road (incl. the safe lane above the fork) ─────
     ctx.fillStyle = "#2c1418";
     ctx.beginPath();
-    ctx.moveTo(W / 2 - topWidth / 2, horizonY);
-    ctx.lineTo(W / 2 + topWidth / 2, horizonY);
-    ctx.lineTo(W / 2 + botWidth / 2, bottomY);
-    ctx.lineTo(W / 2 - botWidth / 2, bottomY);
+    if (!o) {
+      ctx.moveTo(W / 2 - topWidth / 2, horizonY);
+      ctx.lineTo(W / 2 + topWidth / 2, horizonY);
+      ctx.lineTo(W / 2 + botWidth / 2, bottomY);
+      ctx.lineTo(W / 2 - botWidth / 2, bottomY);
+    } else {
+      const t = clamp(o.y, 0, 1);
+      const splitY = horizonY + (bottomY - horizonY) * t;
+      const halfAtSplit = (topWidth + (botWidth - topWidth) * t) / 2;
+      const dir = o.side === "left" ? -1 : 1;
+
+      // Above the fork: just the safe-side half-lane from horizon to splitY.
+      // Below the fork: full road from splitY to bottom (truck still has
+      // both lanes available until the fork reaches it).
+      if (dir === 1) {
+        // Danger right → safe is left
+        ctx.moveTo(W / 2 - topWidth / 2, horizonY);    // top-left (safe lane top-left at horizon)
+        ctx.lineTo(W / 2,                horizonY);    // top-right (safe lane top-right at horizon = centre)
+        ctx.lineTo(W / 2,                splitY);      // safe lane right-edge at splitY (kink-inside)
+        ctx.lineTo(W / 2 + halfAtSplit,  splitY);      // kink-outer: jump out to full road outer edge
+        ctx.lineTo(W / 2 + botWidth / 2, bottomY);     // bottom-right
+        ctx.lineTo(W / 2 - botWidth / 2, bottomY);     // bottom-left
+      } else {
+        // Danger left → safe is right
+        ctx.moveTo(W / 2,                horizonY);    // safe lane top-left = centre at horizon
+        ctx.lineTo(W / 2 + topWidth / 2, horizonY);    // safe lane top-right at horizon
+        ctx.lineTo(W / 2 + botWidth / 2, bottomY);     // bottom-right
+        ctx.lineTo(W / 2 - botWidth / 2, bottomY);     // bottom-left
+        ctx.lineTo(W / 2 - halfAtSplit,  splitY);      // kink-outer on left
+        ctx.lineTo(W / 2,                splitY);      // safe lane left-edge at splitY
+      }
+    }
     ctx.closePath();
     ctx.fill();
 
+    // ── 2. Danger ramp curving UP and outward toward the screen side ─────
+    if (o) drawDangerRamp(o, W, H);
+
+    // ── 3. Centre dashed line — only on the full-road portion ────────────
     ctx.strokeStyle = "rgba(255, 240, 200, 0.85)";
     ctx.lineWidth = 6;
     ctx.setLineDash([24, 36]);
     ctx.lineDashOffset = -state.roadOffset;
     ctx.beginPath();
-    ctx.moveTo(W / 2, horizonY);
-    ctx.lineTo(W / 2, bottomY);
+    if (!o) {
+      ctx.moveTo(W / 2, horizonY);
+      ctx.lineTo(W / 2, bottomY);
+    } else {
+      const t = clamp(o.y, 0, 1);
+      const splitY = horizonY + (bottomY - horizonY) * t;
+      // Dashed centre only on the full-road portion (below splitY).
+      ctx.moveTo(W / 2, splitY);
+      ctx.lineTo(W / 2, bottomY);
+    }
     ctx.stroke();
     ctx.setLineDash([]);
 
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(W / 2 - topWidth / 2, horizonY);
-    ctx.lineTo(W / 2 - botWidth / 2, bottomY);
-    ctx.moveTo(W / 2 + topWidth / 2, horizonY);
-    ctx.lineTo(W / 2 + botWidth / 2, bottomY);
-    ctx.stroke();
-  }
-
-  // Branch road for the Berlin exit. We draw a curving extension of the
-  // asphalt that peels off the side at the obstacle's y position.
-  function drawRoadBranch(o, W, H) {
-    const horizonY = H * 0.55;
-    const bottomY  = H;
-    if (o.y < 0) return;
-    const t = clamp(o.y, 0, 1);
-
-    // Where on the main road the branch starts (in screen coords).
-    const splitY = horizonY + (bottomY - horizonY) * t;
-    const topWidth = W * 0.10;
-    const botWidth = W * 0.78;
-    const widthAtSplit = topWidth + (botWidth - topWidth) * t;
-    const halfAtSplit = widthAtSplit / 2;
-
-    // Branch direction: -1 for left, +1 for right.
-    const dir = o.side === "left" ? -1 : 1;
-
-    // Edge of main road at the split point.
-    const innerEdgeX = W / 2 + dir * halfAtSplit;
-
-    // The branch curves outward (off-screen) as it approaches the camera.
-    // Use a quadratic curve. Control point exaggerates the curl.
-    const exitX = W / 2 + dir * (W * 0.7);  // way off to the side, near bottom
-    const exitY = bottomY;
-    const ctrlX = W / 2 + dir * (halfAtSplit + W * 0.25);
-    const ctrlY = bottomY - H * 0.05;
-
-    // Outer edge of branch (further from main road).
-    const outerInnerX = W / 2 + dir * halfAtSplit;
-    const outerExitX  = W / 2 + dir * (W * 0.95);
-
-    ctx.fillStyle = "#2c1418";
-    ctx.beginPath();
-    ctx.moveTo(innerEdgeX, splitY);
-    ctx.quadraticCurveTo(ctrlX, ctrlY, exitX, exitY);
-    ctx.lineTo(outerExitX, exitY);
-    ctx.quadraticCurveTo(ctrlX + dir * W * 0.05, ctrlY - 10, outerInnerX + dir * 4, splitY - 2);
-    ctx.closePath();
-    ctx.fill();
-
-    // White edge stripe on the curve
+    // ── 4. Edge lines ────────────────────────────────────────────────────
     ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(innerEdgeX, splitY);
-    ctx.quadraticCurveTo(ctrlX, ctrlY, exitX, exitY);
+    if (!o) {
+      ctx.moveTo(W / 2 - topWidth / 2, horizonY);
+      ctx.lineTo(W / 2 - botWidth / 2, bottomY);
+      ctx.moveTo(W / 2 + topWidth / 2, horizonY);
+      ctx.lineTo(W / 2 + botWidth / 2, bottomY);
+    } else {
+      const t = clamp(o.y, 0, 1);
+      const splitY = horizonY + (bottomY - horizonY) * t;
+      const halfAtSplit = (topWidth + (botWidth - topWidth) * t) / 2;
+      const dir = o.side === "left" ? -1 : 1;
+
+      if (dir === 1) {
+        // Safe outer edge (left): horizon → bottom on the left.
+        ctx.moveTo(W / 2 - topWidth / 2, horizonY);
+        ctx.lineTo(W / 2 - botWidth / 2, bottomY);
+        // Safe inner edge (right of safe lane): centre at horizon → splitY.
+        ctx.moveTo(W / 2, horizonY);
+        ctx.lineTo(W / 2, splitY);
+        // Outer edge of full-road part below splitY: from kink to bottom-right.
+        ctx.moveTo(W / 2 + halfAtSplit, splitY);
+        ctx.lineTo(W / 2 + botWidth / 2, bottomY);
+      } else {
+        // Safe outer edge (right).
+        ctx.moveTo(W / 2 + topWidth / 2, horizonY);
+        ctx.lineTo(W / 2 + botWidth / 2, bottomY);
+        // Safe inner edge (left of safe lane).
+        ctx.moveTo(W / 2, horizonY);
+        ctx.lineTo(W / 2, splitY);
+        // Outer edge of full-road part below splitY on the left.
+        ctx.moveTo(W / 2 - halfAtSplit, splitY);
+        ctx.lineTo(W / 2 - botWidth / 2, bottomY);
+      }
+    }
     ctx.stroke();
+
+    // ── 5. The kink "join" line — a thick yellow stripe drawing the eye
+    // to the fork's outer corner where the ramp departs ──────────────────
+    if (o) {
+      const t = clamp(o.y, 0, 1);
+      const splitY = horizonY + (bottomY - horizonY) * t;
+      const halfAtSplit = (topWidth + (botWidth - topWidth) * t) / 2;
+      const dir = o.side === "left" ? -1 : 1;
+      ctx.strokeStyle = "#f3c83d";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      // Hard line down the inside of the safe lane, marking "stay this side"
+      ctx.moveTo(W / 2, horizonY);
+      ctx.lineTo(W / 2, splitY);
+      ctx.stroke();
+      // A short hazard-yellow segment at the kink: from kink-inside to kink-outer.
+      ctx.strokeStyle = "rgba(243, 200, 61, 0.9)";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(W / 2, splitY);
+      ctx.lineTo(W / 2 + dir * halfAtSplit, splitY);
+      ctx.stroke();
+    }
+  }
+
+  function activeObstacle() {
+    // Pick the obstacle currently on-road (highest y wins).
+    let pick = null;
+    for (const o of state.obstacles) {
+      if (o.y < 0.04 || o.y > 1.05) continue;
+      if (!pick || o.y > pick.y) pick = o;
+    }
+    return pick;
+  }
+
+  // The danger ramp peels off at the fork and curves UP-and-OUT toward the
+  // horizon-side corner of the screen. Suggests a loop interchange off-screen.
+  function drawDangerRamp(o, W, H) {
+    const horizonY = H * 0.55;
+    const bottomY  = H;
+    const t = clamp(o.y, 0, 1);
+    const splitY = horizonY + (bottomY - horizonY) * t;
+    const topWidth = W * 0.10;
+    const botWidth = W * 0.78;
+    const halfAtSplit = (topWidth + (botWidth - topWidth) * t) / 2;
+    const dir = o.side === "left" ? -1 : 1;
+
+    // Anchor points on the fork.
+    const innerStartX = W / 2;
+    const innerStartY = splitY;
+    const outerStartX = W / 2 + dir * halfAtSplit;
+    const outerStartY = splitY;
+
+    // Exit point: off the side of the screen, at horizon-mid height
+    // (we want the ramp to curl up and outward).
+    const exitMidY = horizonY + (bottomY - horizonY) * 0.25; // somewhat above split
+    const exitInnerX = W / 2 + dir * W * 1.05;
+    const exitInnerY = exitMidY;
+    const exitOuterX = W / 2 + dir * W * 1.15;
+    const exitOuterY = exitMidY - H * 0.06;
+
+    // Bezier control points for the inner and outer edges. The control
+    // points pull the curve outward + slightly upward, giving the
+    // "sweeping ramp" look.
+    const ic1x = W / 2 + dir * W * 0.35;
+    const ic1y = splitY - (splitY - horizonY) * 0.05;
+    const ic2x = W / 2 + dir * W * 0.75;
+    const ic2y = exitInnerY + 6;
+    const oc1x = W / 2 + dir * (halfAtSplit + W * 0.30);
+    const oc1y = splitY - (splitY - horizonY) * 0.25;
+    const oc2x = W / 2 + dir * W * 0.95;
+    const oc2y = exitOuterY + 12;
+
+    // Asphalt body.
+    ctx.fillStyle = "#332024";
+    ctx.beginPath();
+    ctx.moveTo(innerStartX, innerStartY);
+    ctx.bezierCurveTo(ic1x, ic1y, ic2x, ic2y, exitInnerX, exitInnerY);
+    // Connect across to outer edge at the exit.
+    ctx.lineTo(exitOuterX, exitOuterY);
+    ctx.bezierCurveTo(oc2x, oc2y, oc1x, oc1y, outerStartX, outerStartY);
+    ctx.closePath();
+    ctx.fill();
+
+    // Hazard chevrons painted across the ramp width.
+    drawRampChevrons(
+      innerStartX, innerStartY, ic1x, ic1y, ic2x, ic2y, exitInnerX, exitInnerY,
+      outerStartX, outerStartY, oc1x, oc1y, oc2x, oc2y, exitOuterX, exitOuterY,
+      dir
+    );
+
+    // White edge stripes along the curved edges.
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.65)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(innerStartX, innerStartY);
+    ctx.bezierCurveTo(ic1x, ic1y, ic2x, ic2y, exitInnerX, exitInnerY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(outerStartX, outerStartY);
+    ctx.bezierCurveTo(oc1x, oc1y, oc2x, oc2y, exitOuterX, exitOuterY);
+    ctx.stroke();
+
+    // Implied "loop" curl off-screen, hinting at the highway-loop interchange.
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    const arcCx = W / 2 + dir * W * 1.05;
+    const arcCy = exitMidY - H * 0.07;
+    ctx.arc(arcCx, arcCy, W * 0.13,
+      dir > 0 ? Math.PI * 0.55 : Math.PI * 0.45,
+      dir > 0 ? Math.PI * 1.95 : Math.PI * 1.05,
+      dir > 0);
+    ctx.stroke();
+  }
+
+  // Paint alternating yellow / black chevrons across the ramp width.
+  function drawRampChevrons(
+    ix0, iy0, ic1x, ic1y, ic2x, ic2y, ix3, iy3,
+    ox0, oy0, oc1x, oc1y, oc2x, oc2y, ox3, oy3,
+    dir
+  ) {
+    const STEPS = 5;
+    for (let i = 0; i < STEPS; i++) {
+      const a = i / STEPS;
+      const b = (i + 0.5) / STEPS;
+
+      const innerA = bez(ix0, iy0, ic1x, ic1y, ic2x, ic2y, ix3, iy3, a);
+      const innerB = bez(ix0, iy0, ic1x, ic1y, ic2x, ic2y, ix3, iy3, b);
+      const outerA = bez(ox0, oy0, oc1x, oc1y, oc2x, oc2y, ox3, oy3, a);
+      const outerB = bez(ox0, oy0, oc1x, oc1y, oc2x, oc2y, ox3, oy3, b);
+
+      ctx.fillStyle = (i % 2 === 0) ? "rgba(243, 200, 61, 0.85)" : "rgba(0, 0, 0, 0.85)";
+      ctx.beginPath();
+      ctx.moveTo(innerA.x, innerA.y);
+      ctx.lineTo(innerB.x, innerB.y);
+      ctx.lineTo(outerB.x, outerB.y);
+      ctx.lineTo(outerA.x, outerA.y);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  // Cubic Bezier sampler.
+  function bez(x0, y0, x1, y1, x2, y2, x3, y3, t) {
+    const m = 1 - t;
+    const x = m*m*m*x0 + 3*m*m*t*x1 + 3*m*t*t*x2 + t*t*t*x3;
+    const y = m*m*m*y0 + 3*m*m*t*y1 + 3*m*t*t*y2 + t*t*t*y3;
+    return { x, y };
   }
 
   // ── Targets: fire-trucks in soap bubbles, hovering ────────────────────
@@ -568,36 +754,49 @@
   }
 
   // ── Berlin obstacle sign + post ───────────────────────────────────────
+  // Mounted just BEFORE the fork (slightly closer to camera than splitY),
+  // on the danger side of the road, so the user sees it as a warning while
+  // approaching.
   function drawObstacleSign(o, W, H) {
     if (o.y < -0.05) return;
-    const sideX = o.side === "left" ? 0.05 : 0.95;
-    const p = laneToScreen(sideX, o.y, W, H);
-    const sz = 70 * p.scale;
+    const horizonY = H * 0.55;
+    const bottomY  = H;
+    const t = clamp(o.y, 0, 1);
+    const splitY = horizonY + (bottomY - horizonY) * t;
+    const topWidth = W * 0.10;
+    const botWidth = W * 0.78;
+    const halfAtSplit = (topWidth + (botWidth - topWidth) * t) / 2;
+    const dir = o.side === "left" ? -1 : 1;
+
+    // Position: slightly above the fork, just past the road's outer edge
+    // (so it floats next to where the ramp peels off).
+    const signX = W / 2 + dir * (halfAtSplit + W * 0.07);
+    const signY = splitY - H * 0.02;
+    const sz = 80 * (0.4 + t * 0.85);   // grow with perspective
 
     ctx.save();
-    ctx.translate(p.screenX, p.screenY);
+    ctx.translate(signX, signY);
 
     // Post
-    ctx.fillStyle = "#777";
-    ctx.fillRect(-sz * 0.04, -sz * 0.05, sz * 0.08, sz * 0.75);
+    ctx.fillStyle = "#7a7a7a";
+    ctx.fillRect(-sz * 0.04, 0, sz * 0.08, sz * 0.55);
 
-    // Sign panel (German-style: white with yellow background for autobahn)
+    // Sign panel: yellow autobahn-style
+    const sw = sz * 1.15, sh = sz * 0.55;
     ctx.fillStyle = "#f3c83d";
     ctx.strokeStyle = "#1a1a1a";
-    ctx.lineWidth = sz * 0.04;
-    const sw = sz * 1.05, sh = sz * 0.55;
-    ctx.fillRect(-sw / 2, -sz * 0.6, sw, sh);
-    ctx.strokeRect(-sw / 2, -sz * 0.6, sw, sh);
+    ctx.lineWidth = sz * 0.05;
+    ctx.fillRect(-sw / 2, -sz * 0.55, sw, sh);
+    ctx.strokeRect(-sw / 2, -sz * 0.55, sw, sh);
 
-    // "BERLIN" text
+    // "BERLIN" + arrow
     ctx.fillStyle = "#1a1a1a";
-    ctx.font = `bold ${sz * 0.22}px Arial, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("BERLIN", 0, -sz * 0.4);
-    // Arrow
-    ctx.font = `bold ${sz * 0.28}px Arial, sans-serif`;
-    ctx.fillText(o.side === "left" ? "←" : "→", 0, -sz * 0.18);
+    ctx.font = `900 ${sz * 0.22}px Arial, sans-serif`;
+    ctx.fillText("BERLIN", 0, -sz * 0.38);
+    ctx.font = `bold ${sz * 0.30}px Arial, sans-serif`;
+    ctx.fillText(o.side === "left" ? "←" : "→", 0, -sz * 0.12);
 
     ctx.restore();
   }
